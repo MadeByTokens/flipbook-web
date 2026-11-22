@@ -140,6 +140,28 @@ menu with Project Settings, Frames Viewer, Onion (switch + Edit), Grid (switch +
 Magic Cut, Add Image, Add Video, and a Make Movie button; previous/play/next and the
 layers icon at the bottom right.
 
+### Narration and gestures in that video
+
+Reported by Gemini 4 Hydrogen from the video file. Not checked by ear, but every
+point that has a visual counterpart matches the still frames above.
+
+- Classic "keeps things familiar"; Studio "shows you more ... all in one place".
+- **Add a layer (Classic):** tap the layer you are on to open the layer menu, then
+  plus. **Delete a layer (Classic):** long-press the layer in that menu, then delete.
+- **Add a track (Studio):** plus at the top left of the timeline, then layer track or
+  audio track. Audio lives on the timeline as its own track.
+- **Move frames (Studio):** long-press a frame *number* to grab that frame on every
+  layer and slide it; keep swiping to take several columns. Long-press a frame on one
+  layer, wait for "Selected", then swipe slowly to extend and drag to move.
+- **Pinch on the timeline** zooms it to show more frames [0:57].
+- **Delete (Studio)** works the same for layers, frames, groups and audio: select,
+  then delete.
+- **Clear** wipes the drawing but keeps the frame in place, so timing is unchanged.
+- **Undo covers everything**, including deleting a layer, as a single history in the
+  order the actions were made.
+- Image and video import moved from the three-dots menu to the bottom bar.
+- Canvas pinch, pan, rotate and any two-finger-tap gesture: not shown.
+
 ## Still unknown
 
 1. Pinch, pan and rotate behaviour, and whether any undo gesture exists.
