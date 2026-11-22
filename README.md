@@ -15,6 +15,17 @@ Primary target: iPad Air (M4, 2026) with Apple Pencil, in Safari.
 - Rotoscoping: draw over imported images and video
 - Export: MP4, GIF, PNG sequence, and a project file for backup
 
+## Design principle: familiar to FlipaClip users
+
+Someone who already animates in FlipaClip should be able to sit down and work
+without relearning. That means matching its interaction conventions where they
+are known: where controls sit, what things are called, which gestures do what,
+and sensible defaults. Where this app adds something FlipaClip lacks, it must be
+optional and must not change how the familiar path behaves.
+
+It does not mean copying its artwork, icons, name or visual styling; the look
+is our own.
+
 ## Constraints
 
 - GitHub Pages cannot set custom headers, so there is no cross-origin
