@@ -30,23 +30,53 @@ Primary target: iPad Air (M4, 2026) with Apple Pencil, in Safari.
 
 | Part | Choice |
 |---|---|
-| Build | TypeScript + Vite, deployed by a GitHub Action |
-| UI | SolidJS for toolbars and timeline; the canvas lives outside it |
-| Rendering | WebGL2 behind a renderer interface |
-| Input | Pointer Events with pressure, tilt and coalesced samples |
-| Storage | Cropped, compressed drawings in the origin private file system; metadata in IndexedDB |
+| Build | TypeScript + Vite (build-time only), deployed by a GitHub Action |
+| UI | SolidJS for toolbars and timeline once they grow; the canvas lives outside it |
+| Rendering | WebGL2 in a single canvas, on the main thread, behind a renderer interface |
+| Input | Pointer Events with pressure, coalesced and predicted samples; Touch Events kept as a switchable back-end for comparison on the iPad |
+| Document | 1920x1080, sRGB, raster drawings |
+| Timeline model | Held drawings: each drawing on a layer has a length, defaulting to one frame |
+| Storage | Everything in the origin private file system: 256-pixel tiles plus one project manifest replaced atomically. Autosave after every stroke |
 | Undo | Per-stroke tile deltas |
+| Playback | Composited live from layer textures, with a worker loading frames ahead of the playhead |
+| Workers | Saving, compression, export and thumbnails. WebAssembly only where measurements show JavaScript is too slow |
 | Audio | Web Audio |
-| Export | WebCodecs (H.264 + AAC), GIF and zip encoding in workers |
+| Export | WebCodecs (H.264 + AAC), GIF and zip encoding in workers, saved through the share sheet |
 
 ## Phases
 
-1. Latency spike: one brush, full-screen canvas, performance overlay
+1. **Latency spike (current):** one brush, eraser, performance overlay
 2. Core animator: timeline, onion skin, playback, undo, autosave, offline install
 3. Layers and tools
 4. Export and backup
 5. Audio
 6. Rotoscope and effects
+
+## Development
+
+```sh
+npm install
+npx playwright install webkit chromium   # once, and after Playwright upgrades
+npm run dev      # dev server, reachable from the iPad at http://<this-machine>:5173
+npm run check    # type-check, unit tests, build, browser tests
+npm run shots    # only the screenshot run
+```
+
+### How changes are verified
+
+- **Unit tests** (`src/**/*.test.ts`, Vitest) cover pure logic such as the brush stroke engine.
+- **Browser tests** (`tests/e2e`, Playwright) run the built app in WebKit and Chromium at the
+  iPad Air's screen size. They draw with synthetic pencil events (including pressure) and read
+  pixels back from the drawing layer through the `window.__flipbook` hook.
+- **Screenshots** from `tests/e2e/visual.spec.ts` land in `test-results/shots/` and are reviewed
+  by eye for layout and line quality.
+- **On the iPad:** tap the bar-chart button for the stats overlay (frame time, pencil-to-ink
+  latency, sample rate). Its buttons switch between Pointer and Touch Events and toggle
+  prediction, so the options can be compared with the same hand. `?hud` and `?input=touch`
+  in the URL set the same options at load.
+
+Playwright's WebKit is not iPad Safari and runs without a GPU here, so its timing numbers mean
+nothing. Performance claims come from the overlay on the device.
 
 ## Performance budgets
 
