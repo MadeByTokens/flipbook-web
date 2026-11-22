@@ -94,13 +94,55 @@ preview. O: onion skin. E: eraser. B: last-used brush.
 - "Make Movie": name, output size, format (MP4, GIF, PNG sequence), transparent
   background for GIF/PNG.
 
-## Unknown, needs screenshots or a look at the app
+## Seen in the official video
 
-1. Default position and order of the Draw Tools bar.
-2. Pinch/pan/rotate behaviour and whether any undo gesture exists.
-3. New-project screen details and defaults.
-4. Whether playback loops by default.
-5. Text tool behaviour.
+Read from still frames of "FlipaClip Update: Where Everything Is" (FlipaClip channel,
+uploaded 2026-10-28, 126 s, https://www.youtube.com/watch?v=1ydTQlH3IFs), iPad in
+landscape. Timestamps in brackets. Stills cannot show gestures or narration.
 
-The official video "How to use the new version of FlipaClip"
-(https://www.youtube.com/watch?v=1ydTQlH3IFs) probably answers 1, 2 and 4.
+**Classic layout** [0:03, 0:21, 1:51, 1:57]
+
+- Top bar: close (X) at the far left; layout switch in the centre, labelled "Studio";
+  share and three-dots at the far right.
+- Draw Tools bar: a floating vertical pill on the **left edge**, vertically centred,
+  with a drag handle on top. Order top to bottom: **brush, eraser, lasso, fill, text,
+  "..." (more)**. The selected tool is highlighted.
+- Bottom-left corner: Undo and Redo, with text labels.
+- Bottom centre (Mini timeline): the current frame thumbnail with its number as a
+  badge, and a dashed **"+" slot to its right** to add a frame. A "Layer" thumbnail
+  chip sits just below and to the left of it.
+- Right of the timeline: a **play button**, then labelled buttons **Image/Video, Add
+  audio, Clear**, then **Copy, Paste** at the far right.
+- Playback in Classic is full screen with the hint "Tap on screen to stop" [2:00].
+
+**Layer popover** [1:12, 1:42]: opened from the layer chip. Rows list layers with the
+newest on top ("Layer 2" above "Layer 1"), a drag handle on the left, opacity "100%"
+with a chevron on the right. Icons for lock, duplicate and delete along the top, and
+a "+" at the bottom to add a layer.
+
+**Image/Video menu** [1:54]: Photos/Images, Videos, Photo camera, Video camera, Files.
+
+**Studio layout** [0:12, 0:27, 0:54, 1:30]
+
+- Timeline under the stage: layer rows with a name chip and an eye icon on the left,
+  frame thumbnails in each row, numbered time ruler on top with a playhead marker.
+- A floating playback bar centred above the timeline: mute, previous frame, play,
+  next frame, timecode.
+- "+" above the layer chips offers "Layer track" and "Audio track" [0:30].
+- Bottom action bar: Undo/Redo left; Image/Video, Select, Clear, Delete centre;
+  Copy, Paste right. With frames selected it shows Group, Deselect, Clear, Delete and
+  a "N Selected" pill with a close button [0:57, 1:06].
+- Audio clip selected: Add audio, Split, Select, Delete; its popover has Mute,
+  Duration, Repeat (Loop), Volume slider, Rename [0:36, 0:39].
+
+**Previous version, shown for comparison** [1:09, 1:48]: tools along the top; three-dots
+menu with Project Settings, Frames Viewer, Onion (switch + Edit), Grid (switch + Edit),
+Magic Cut, Add Image, Add Video, and a Make Movie button; previous/play/next and the
+layers icon at the bottom right.
+
+## Still unknown
+
+1. Pinch, pan and rotate behaviour, and whether any undo gesture exists.
+2. New-project screen details and defaults.
+3. Text tool behaviour and what the "..." tool menu contains beyond Blur and Smudge.
+4. Whether Classic playback loops.
