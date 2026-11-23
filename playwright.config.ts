@@ -8,8 +8,8 @@ export default defineConfig({
   outputDir: 'test-results',
   fullyParallel: true,
   // The browsers render WebGL in software here; too many at once starve each other.
-  workers: 3,
-  timeout: 90_000,
+  workers: process.env.CI ? 2 : 3,
+  timeout: process.env.CI ? 180_000 : 90_000,
   reporter: [['list']],
   use: { baseURL: 'http://localhost:4173' },
   webServer: {
@@ -19,6 +19,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'ipad-webkit', use: { browserName: 'webkit', ...ipad } },
-    { name: 'ipad-chromium', use: { browserName: 'chromium', ...ipad } },
+    // Chromium is the second opinion, and the only one that can test saving and offline use.
+    // Its software WebGL is slow at the iPad's 2x density, so it runs at 1x.
+    { name: 'ipad-chromium', use: { browserName: 'chromium', ...ipad, deviceScaleFactor: 1 } },
   ],
 });
