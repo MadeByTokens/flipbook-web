@@ -10,6 +10,8 @@ export default defineConfig({
   // The browsers render WebGL in software here; too many at once starve each other.
   workers: process.env.CI ? 2 : 3,
   timeout: process.env.CI ? 180_000 : 90_000,
+  // CI machines are slow and shared; a test that passes on a second try is reported as flaky.
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: { baseURL: 'http://localhost:4173' },
   webServer: {

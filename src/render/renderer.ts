@@ -12,16 +12,22 @@ export interface View {
   y: number;
 }
 
-export interface OnionSkin {
-  cel: number;
-  /** Replace the ink colour with this one, or null to keep the drawing's colours. */
-  tint: Rgb | null;
-  opacity: number;
-}
+/** A 2D affine transform as a column-major 3x3 matrix, mapping a unit quad (-1..1) to document pixels. */
+export type Mat3 = Float32Array;
+
+/** One thing to draw, bottom to top: a drawing, or the floating selection. */
+export type SceneItem =
+  | {
+      cel: number;
+      /** Replace the ink colour with this one (onion skin), or null to keep the drawing's colours. */
+      tint: Rgb | null;
+      opacity: number;
+    }
+  | { sprite: Mat3 };
 
 export interface Scene {
-  cel: number | null;
-  onion: readonly OnionSkin[];
+  paper: Rgb;
+  items: readonly SceneItem[];
   /** Stamps drawn on screen for this frame only (ink that is not committed yet). */
   transient: StampBatch | null;
   colour: Rgb;
@@ -55,12 +61,13 @@ void main() {
 
 const QUAD_VS = `#version 300 es
 layout(location=0) in vec2 aCorner; // -1..1
-uniform vec2 uDocSize;
-uniform vec4 uXform;
+uniform mat3 uModel; // corner -> document pixels
+uniform vec4 uXform; // document pixels -> clip
 out vec2 vUv;
 void main() {
   vUv = aCorner * 0.5 + 0.5;
-  gl_Position = vec4(vUv * uDocSize * uXform.xy + uXform.zw, 0.0, 1.0);
+  vec2 doc = (uModel * vec3(aCorner, 1.0)).xy;
+  gl_Position = vec4(doc * uXform.xy + uXform.zw, 0.0, 1.0);
 }`;
 
 const QUAD_FS = `#version 300 es
@@ -76,7 +83,6 @@ void main() {
 }`;
 
 const BACKDROP: Rgb = [0.13, 0.14, 0.16];
-const PAPER: Rgb = [1, 1, 1];
 const FLOATS_PER_STAMP = 3;
 export const THUMB_W = 480;
 export const THUMB_H = 270;
@@ -137,10 +143,13 @@ export class Renderer {
   private backup!: WebGLTexture;
   private white!: WebGLTexture;
   private thumb!: WebGLTexture;
+  private sprite: WebGLTexture | null = null;
+  private output: { tex: WebGLTexture; w: number; h: number } | null = null;
+  private readonly docModel: Mat3;
   private readonly cels = new Map<number, WebGLTexture>();
   private readonly zeros: Uint8Array;
   private u!: Record<
-    'stampXform' | 'stampAA' | 'stampColor' | 'quadXform' | 'quadDocSize' | 'quadTint' | 'quadOpacity',
+    'stampXform' | 'stampAA' | 'stampColor' | 'quadXform' | 'quadModel' | 'quadTint' | 'quadOpacity',
     WebGLUniformLocation
   >;
   view: View = { scale: 1, x: 0, y: 0 };
@@ -165,6 +174,7 @@ export class Renderer {
     if (!gl) throw new Error('WebGL2 is not available in this browser.');
     this.gl = gl;
     this.zeros = new Uint8Array(docWidth * 4 * 256);
+    this.docModel = new Float32Array([docWidth / 2, 0, 0, 0, docHeight / 2, 0, docWidth / 2, docHeight / 2, 1]);
     this.init();
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
@@ -172,6 +182,8 @@ export class Renderer {
     });
     canvas.addEventListener('webglcontextrestored', () => {
       this.cels.clear();
+      this.sprite = null;
+      this.output = null;
       this.init();
       this.contextLost = false;
       this.onRestored();
@@ -201,7 +213,7 @@ export class Renderer {
       stampAA: loc(this.stampProgram, 'uAA'),
       stampColor: loc(this.stampProgram, 'uColor'),
       quadXform: loc(this.quadProgram, 'uXform'),
-      quadDocSize: loc(this.quadProgram, 'uDocSize'),
+      quadModel: loc(this.quadProgram, 'uModel'),
       quadTint: loc(this.quadProgram, 'uTint'),
       quadOpacity: loc(this.quadProgram, 'uOpacity'),
     };
@@ -366,28 +378,31 @@ export class Renderer {
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, batch.count);
   }
 
-  private quad(tex: WebGLTexture, xform: Xform, tint: Rgb | null, opacity: number): void {
+  private quad(tex: WebGLTexture, model: Mat3, xform: Xform, tint: Rgb | null, opacity: number): void {
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniformMatrix3fv(this.u.quadModel, false, model);
     gl.uniform4f(this.u.quadXform, ...xform);
     gl.uniform4f(this.u.quadTint, tint?.[0] ?? 0, tint?.[1] ?? 0, tint?.[2] ?? 0, tint ? 1 : 0);
     gl.uniform1f(this.u.quadOpacity, opacity);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
-  private layers(scene: Pick<Scene, 'cel' | 'onion'>, xform: Xform): void {
+  /** Draws paper and every item of the scene into the bound target. */
+  private layers(scene: Pick<Scene, 'paper' | 'items'>, xform: Xform): void {
     const gl = this.gl;
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.quadProgram);
     gl.bindVertexArray(this.quadVao);
-    gl.uniform2f(this.u.quadDocSize, this.docWidth, this.docHeight);
-    this.quad(this.white, xform, PAPER, 1);
-    for (const skin of scene.onion) {
-      const tex = this.cels.get(skin.cel);
-      if (tex) this.quad(tex, xform, skin.tint, skin.opacity);
+    this.quad(this.white, this.docModel, xform, scene.paper, 1);
+    for (const item of scene.items) {
+      if ('sprite' in item) {
+        if (this.sprite) this.quad(this.sprite, item.sprite, xform, null, 1);
+        continue;
+      }
+      const tex = this.cels.get(item.cel);
+      if (tex) this.quad(tex, this.docModel, xform, item.tint, item.opacity);
     }
-    const tex = scene.cel === null ? undefined : this.cels.get(scene.cel);
-    if (tex) this.quad(tex, xform, null, 1);
   }
 
   /** Draws the scene to the screen. */
@@ -399,19 +414,19 @@ export class Renderer {
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(BACKDROP[0], BACKDROP[1], BACKDROP[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    // Keep everything inside the paper, including a selection dragged past its edge.
+    const { scale, x, y } = this.view;
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(
+      Math.round(x),
+      Math.round(this.canvas.height - y - this.docHeight * scale),
+      Math.round(this.docWidth * scale),
+      Math.round(this.docHeight * scale),
+    );
     this.layers(scene, xform);
 
     const transient = scene.transient;
     if (transient && transient.count > 0) {
-      // Keep temporary ink inside the paper.
-      const { scale, x, y } = this.view;
-      gl.enable(gl.SCISSOR_TEST);
-      gl.scissor(
-        Math.round(x),
-        Math.round(this.canvas.height - y - this.docHeight * scale),
-        Math.round(this.docWidth * scale),
-        Math.round(this.docHeight * scale),
-      );
       gl.useProgram(this.stampProgram);
       gl.bindVertexArray(this.stampVao);
       this.uploadStamps(transient);
@@ -419,19 +434,61 @@ export class Renderer {
       gl.uniform1f(this.u.stampAA, 1 / scale);
       gl.uniform4f(this.u.stampColor, scene.colour[0], scene.colour[1], scene.colour[2], 1);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, transient.count);
-      gl.disable(gl.SCISSOR_TEST);
     }
+    gl.disable(gl.SCISSOR_TEST);
   }
 
-  /** Renders a cel over paper at thumbnail size and returns its pixels, top row first. */
-  thumbnail(id: number): Uint8ClampedArray<ArrayBuffer> {
+  /** Renders the scene at thumbnail size and returns its pixels, top row first. */
+  thumbnail(scene: Pick<Scene, 'paper' | 'items'>): Uint8ClampedArray<ArrayBuffer> {
     const gl = this.gl;
     const out = new Uint8ClampedArray(THUMB_W * THUMB_H * 4);
     this.target(this.thumb);
     gl.viewport(0, 0, THUMB_W, THUMB_H);
-    this.layers({ cel: id, onion: [] }, this.docXform());
+    this.layers(scene, this.docXform());
     gl.readPixels(0, 0, THUMB_W, THUMB_H, gl.RGBA, gl.UNSIGNED_BYTE, out);
     return out;
+  }
+
+  /** Renders the scene at any size (for export) and returns its pixels, top row first. */
+  renderFrame(scene: Pick<Scene, 'paper' | 'items'>, width: number, height: number): Uint8ClampedArray<ArrayBuffer> {
+    const gl = this.gl;
+    if (!this.output || this.output.w !== width || this.output.h !== height) {
+      if (this.output) gl.deleteTexture(this.output.tex);
+      this.output = { tex: this.makeTexture(width, height, gl.NEAREST), w: width, h: height };
+    }
+    const out = new Uint8ClampedArray(width * height * 4);
+    this.target(this.output.tex);
+    gl.viewport(0, 0, width, height);
+    this.layers(scene, this.docXform());
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    return out;
+  }
+
+  // --- floating selection ---------------------------------------------------------
+
+  /** Uploads the pixels of the floating selection (premultiplied RGBA, top row first). */
+  setSprite(pixels: Uint8Array, width: number, height: number): void {
+    const gl = this.gl;
+    this.clearSprite();
+    this.sprite = this.makeTexture(width, height, gl.LINEAR);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  }
+
+  clearSprite(): void {
+    if (this.sprite) this.gl.deleteTexture(this.sprite);
+    this.sprite = null;
+  }
+
+  /** Draws the floating selection permanently into a cel. */
+  spriteToCel(id: number, model: Mat3): void {
+    if (!this.sprite || this.contextLost) return;
+    const gl = this.gl;
+    this.target(this.tex(id));
+    gl.viewport(0, 0, this.docWidth, this.docHeight);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(this.quadProgram);
+    gl.bindVertexArray(this.quadVao);
+    this.quad(this.sprite, model, this.docXform(), null, 1);
   }
 
   /** One pixel of a cel (not including paper). For tests and tools. */

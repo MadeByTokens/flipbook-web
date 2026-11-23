@@ -50,6 +50,19 @@ export class StoreClient {
     return this.request<InitResult>({ type: 'init' });
   }
 
+  putIndex(text: string): void {
+    this.send({ type: 'putIndex', text });
+  }
+
+  /** Switches to a project and returns its saved manifest, or null if it is new. */
+  open(project: string): Promise<string | null> {
+    return this.request({ type: 'open', project });
+  }
+
+  deleteProject(project: string): Promise<void> {
+    return this.request({ type: 'deleteProject', project });
+  }
+
   getCel(id: number): Promise<{ index: number; data: Uint8Array }[]> {
     return this.request({ type: 'getCel', id });
   }
@@ -68,6 +81,16 @@ export class StoreClient {
 
   collectGarbage(keep: number[]): void {
     this.send({ type: 'collectGarbage', keep });
+  }
+
+  /** The open project as a single file. */
+  exportProject(manifest: string, cels: number[]): Promise<Uint8Array<ArrayBuffer>> {
+    return this.request({ type: 'exportProject', manifest, cels });
+  }
+
+  /** Unpacks a project file into a new project and returns its manifest. */
+  importProject(project: string, file: Uint8Array): Promise<string> {
+    return this.request({ type: 'importProject', project, file });
   }
 
   /** Resolves once every request sent so far has been answered. */

@@ -89,31 +89,33 @@ export class CelStore {
 
   // --- drawings ---------------------------------------------------------------
 
+  private decode(payload: Uint8Array | null): Map<number, Packed> {
+    const tiles = new Map<number, Packed>();
+    if (!payload || payload.length < 4) return tiles;
+    const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const count = view.getUint32(0, true);
+    let at = 4;
+    for (let i = 0; i < count && at + 7 <= payload.length; i++) {
+      const index = view.getUint16(at, true);
+      const flag = view.getUint8(at + 2);
+      const length = view.getUint32(at + 3, true);
+      at += 7;
+      if (at + length > payload.length) break;
+      tiles.set(index, { flag, bytes: payload.slice(at, at + length) });
+      at += length;
+    }
+    return tiles;
+  }
+
   private async load(id: number): Promise<Map<number, Packed>> {
     const known = this.cels.get(id);
     if (known) return known;
-    const tiles = new Map<number, Packed>();
-    const payload = await this.readSlot(`cel-${id}`);
-    if (payload && payload.length >= 4) {
-      const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-      const count = view.getUint32(0, true);
-      let at = 4;
-      for (let i = 0; i < count && at + 7 <= payload.length; i++) {
-        const index = view.getUint16(at, true);
-        const flag = view.getUint8(at + 2);
-        const length = view.getUint32(at + 3, true);
-        at += 7;
-        if (at + length > payload.length) break;
-        tiles.set(index, { flag, bytes: payload.slice(at, at + length) });
-        at += length;
-      }
-    }
+    const tiles = this.decode(await this.readSlot(`cel-${id}`));
     this.cels.set(id, tiles);
     return tiles;
   }
 
-  private async save(id: number): Promise<void> {
-    const tiles = this.cels.get(id)!;
+  private encode(tiles: Map<number, Packed>): Uint8Array {
     let size = 4;
     for (const t of tiles.values()) size += 7 + t.bytes.length;
     const payload = new Uint8Array(size);
@@ -127,7 +129,22 @@ export class CelStore {
       payload.set(t.bytes, at + 7);
       at += 7 + t.bytes.length;
     }
-    await this.writeSlot(`cel-${id}`, payload);
+    return payload;
+  }
+
+  private async save(id: number): Promise<void> {
+    await this.writeSlot(`cel-${id}`, this.encode(this.cels.get(id)!));
+  }
+
+  /** A drawing in its stored (compressed) form, for project files. */
+  async getPacked(id: number): Promise<Uint8Array> {
+    return this.encode(await this.load(id));
+  }
+
+  /** Stores a drawing that is already in its compressed form. */
+  async putPacked(id: number, payload: Uint8Array): Promise<void> {
+    this.cels.set(id, this.decode(payload));
+    await this.save(id);
   }
 
   async putTiles(id: number, changes: readonly TileChange[]): Promise<void> {

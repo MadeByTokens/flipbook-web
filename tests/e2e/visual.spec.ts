@@ -55,14 +55,43 @@ test('screenshots', async ({ page }, info) => {
   await shot('8-thickness');
   await page.keyboard.press('Escape');
 
+  await page.getByRole('button', { name: 'Lasso' }).click();
+  await stroke(page, [
+    { x: 250, y: 200 }, { x: 900, y: 200 }, { x: 900, y: 520 }, { x: 250, y: 520 }, { x: 250, y: 200 },
+  ]);
+  await shot('9-lasso');
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  await page.getByRole('button', { name: 'Layers' }).click();
+  await page.getByRole('button', { name: '+ Add layer' }).click();
+  await shot('10-layers');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: 'Projects' }).click();
+  await shot('11-projects');
+  await page.getByRole('button', { name: '+ New project' }).click();
+  await shot('12-new-project');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Back to drawing' }).click();
+
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.locator('#menu').getByText('Make movie', { exact: true }).click();
+  await shot('13-make-movie');
+  await page.locator('#movie').getByRole('button', { name: 'Cancel' }).click();
+
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.locator('#menu').getByText('Help', { exact: true }).click();
+  await shot('14-help');
+  await page.getByRole('button', { name: 'Start drawing' }).click();
+
   await page.getByRole('button', { name: 'Play' }).click();
   await page.waitForTimeout(200);
-  await shot('9-playing');
+  await shot('15-playing');
   await page.mouse.click(600, 400);
 
   // Close-up of the paper so line quality can be judged.
   await page.screenshot({
-    path: `test-results/shots/${info.project.name}-10-closeup.png`,
+    path: `test-results/shots/${info.project.name}-16-closeup.png`,
     clip: { x: 150, y: 150, width: 500, height: 330 },
   });
   expect(errors).toEqual([]);

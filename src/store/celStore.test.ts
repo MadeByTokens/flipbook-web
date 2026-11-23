@@ -78,6 +78,19 @@ describe('CelStore', () => {
     expect(await store.getCel(1)).toEqual([]);
   });
 
+  it('moves a drawing between projects in its compressed form', async () => {
+    const from = new CelStore(new MemoryBackend());
+    await from.putTiles(3, [{ index: 2, data: tile(5) }, { index: 9, data: noise() }]);
+    const packed = await from.getPacked(3);
+    expect(packed.length).toBeLessThan(8000);
+
+    const backend = new MemoryBackend();
+    await new CelStore(backend).putPacked(11, packed);
+    const tiles = await new CelStore(backend).getCel(11);
+    expect(tiles.find((t) => t.index === 2)!.data).toEqual(tile(5));
+    expect(tiles.find((t) => t.index === 9)!.data).toEqual(noise());
+  });
+
   it('collects drawings that are no longer referenced', async () => {
     const backend = new MemoryBackend();
     const store = new CelStore(backend);

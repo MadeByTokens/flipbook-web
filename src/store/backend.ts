@@ -10,6 +10,13 @@ export interface Backend {
   list(): Promise<string[]>;
 }
 
+/** Opens (creating if needed) the storage for one folder, and can delete a folder outright. */
+export interface Storage {
+  readonly persistent: boolean;
+  open(folder: string): Promise<Backend>;
+  destroy(folder: string): Promise<void>;
+}
+
 export class MemoryBackend implements Backend {
   readonly persistent = false;
   readonly files = new Map<string, Uint8Array>();
@@ -28,5 +35,20 @@ export class MemoryBackend implements Backend {
 
   async list(): Promise<string[]> {
     return [...this.files.keys()];
+  }
+}
+
+export class MemoryStorage implements Storage {
+  readonly persistent = false;
+  readonly folders = new Map<string, MemoryBackend>();
+
+  async open(folder: string): Promise<Backend> {
+    let backend = this.folders.get(folder);
+    if (!backend) this.folders.set(folder, (backend = new MemoryBackend()));
+    return backend;
+  }
+
+  async destroy(folder: string): Promise<void> {
+    this.folders.delete(folder);
   }
 }

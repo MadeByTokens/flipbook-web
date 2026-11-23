@@ -1,45 +1,86 @@
 import { describe, expect, it } from 'vitest';
 import { History } from './history';
-import { clampFrame, frameCount, locate, newProject, parseProject, startOf } from './project';
+import { clampFrame, frameCount, locate, newProject, parseProject, startOf, usedCels } from './project';
 import { extractTile, isBlank, sameBytes, TILE, tileAlign, tileCount, tileRect, tilesIn } from './tiles';
 
 describe('project', () => {
-  const cels = [{ id: 1, length: 1 }, { id: 2, length: 3 }, { id: 3, length: 2 }];
+  const columns = [{ length: 1 }, { length: 3 }, { length: 2 }];
 
-  it('maps frames to held drawings', () => {
-    expect(frameCount(cels)).toBe(6);
-    expect([0, 1, 2, 3, 4, 5].map((f) => locate(cels, f).cel.id)).toEqual([1, 2, 2, 2, 3, 3]);
-    expect(locate(cels, 99).index).toBe(2);
-    expect([0, 1, 2].map((i) => startOf(cels, i))).toEqual([0, 1, 4]);
-    expect(clampFrame(cels, -3)).toBe(0);
-    expect(clampFrame(cels, 42)).toBe(5);
+  it('maps frames to columns, counting holds', () => {
+    expect(frameCount(columns)).toBe(6);
+    expect([0, 1, 2, 3, 4, 5].map((f) => locate(columns, f))).toEqual([0, 1, 1, 1, 2, 2]);
+    expect(locate(columns, 99)).toBe(2);
+    expect([0, 1, 2].map((i) => startOf(columns, i))).toEqual([0, 1, 4]);
+    expect(clampFrame(columns, -3)).toBe(0);
+    expect(clampFrame(columns, 42)).toBe(5);
+  });
+
+  const sample = () => ({
+    ...newProject(1920, 1080, { fps: 24, color: '#ffeecc' }),
+    columns,
+    layers: [
+      { id: 1, name: 'Background', visible: true, opacity: 1, cels: [1, 0, 2] },
+      { id: 2, name: 'Layer 2', visible: false, opacity: 0.5, cels: [0, 3, 0] },
+    ],
+    background: { color: '#ffeecc', image: 9 },
+    nextCelId: 10,
+    nextLayerId: 3,
   });
 
   it('round-trips through JSON', () => {
-    const p = { ...newProject(1920, 1080), cels, nextCelId: 4, fps: 24 };
-    expect(parseProject(JSON.stringify(p), 1920, 1080)).toEqual(p);
+    expect(parseProject(JSON.stringify(sample()), 1920, 1080)).toEqual(sample());
+  });
+
+  it('lists every drawing in use', () => {
+    expect(usedCels(sample()).sort()).toEqual([1, 2, 3, 9]);
+    expect(usedCels(newProject(1920, 1080))).toEqual([]);
   });
 
   it('rejects damaged or foreign data', () => {
-    const base = newProject(1920, 1080);
-    const bad = [
-      'not json',
-      'null',
-      JSON.stringify({ ...base, version: 2 }),
-      JSON.stringify({ ...base, width: 100 }),
-      JSON.stringify({ ...base, fps: 0 }),
-      JSON.stringify({ ...base, fps: 31 }),
-      JSON.stringify({ ...base, cels: [] }),
-      JSON.stringify({ ...base, cels: [{ id: 1, length: 0 }] }),
-      JSON.stringify({ ...base, cels: [{ id: 1, length: 1 }, { id: 1, length: 1 }] }),
-      JSON.stringify({ ...base, cels: [{ id: 1.5, length: 1 }] }),
+    const base = sample();
+    const layer = base.layers[0]!;
+    const bad: unknown[] = [
+      { ...base, version: 3 },
+      { ...base, width: 100 },
+      { ...base, fps: 0 },
+      { ...base, fps: 31 },
+      { ...base, columns: [] },
+      { ...base, columns: [{ length: 0 }, { length: 1 }, { length: 1 }] },
+      { ...base, layers: [] },
+      { ...base, layers: [{ ...layer, cels: [1, 0] }] },
+      { ...base, layers: [{ ...layer, cels: [1, 1, 0] }] },
+      { ...base, layers: [layer, { ...layer, id: 2, cels: [1, 0, 0] }] },
+      { ...base, layers: [layer, { ...layer, cels: [0, 0, 0] }] },
+      { ...base, layers: [{ ...layer, cels: [1.5, 0, 0] }] },
+      { ...base, layers: [{ ...layer, opacity: 2 }] },
+      { ...base, background: { color: 'red', image: 0 } },
+      { ...base, background: { color: '#ffffff', image: 1 } },
     ];
-    for (const text of bad) expect(parseProject(text, 1920, 1080), text).toBeNull();
+    for (const p of bad) expect(parseProject(JSON.stringify(p), 1920, 1080), JSON.stringify(p)).toBeNull();
+    expect(parseProject('not json', 1920, 1080)).toBeNull();
+    expect(parseProject('null', 1920, 1080)).toBeNull();
   });
 
   it('never hands out an id that is already in use', () => {
-    const p = { ...newProject(1920, 1080), cels: [{ id: 7, length: 1 }], nextCelId: 3 };
-    expect(parseProject(JSON.stringify(p), 1920, 1080)?.nextCelId).toBe(8);
+    const p = { ...sample(), nextCelId: 2, nextLayerId: 1 };
+    const parsed = parseProject(JSON.stringify(p), 1920, 1080)!;
+    expect(parsed.nextCelId).toBe(10);
+    expect(parsed.nextLayerId).toBe(3);
+  });
+
+  it('upgrades a single-layer project from the first version', () => {
+    const v1 = { version: 1, width: 1920, height: 1080, fps: 8, cels: [{ id: 4, length: 1 }, { id: 7, length: 3 }], nextCelId: 8 };
+    expect(parseProject(JSON.stringify(v1), 1920, 1080)).toEqual({
+      version: 2,
+      width: 1920,
+      height: 1080,
+      fps: 8,
+      columns: [{ length: 1 }, { length: 3 }],
+      layers: [{ id: 1, name: 'Layer 1', visible: true, opacity: 1, cels: [4, 7] }],
+      background: { color: '#ffffff', image: 0 },
+      nextCelId: 8,
+      nextLayerId: 2,
+    });
   });
 });
 

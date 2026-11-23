@@ -10,17 +10,24 @@ export interface DocPoint {
 export type Rgba = [number, number, number, number];
 
 export interface Status {
+  project: string;
+  projects: { id: string; name: string }[];
   frame: number;
   frames: number;
-  cels: { id: number; length: number }[];
+  columns: number;
+  layers: { name: string; visible: boolean; opacity: number }[];
+  layer: number;
   fps: number;
+  background: string;
   tool: string;
+  color: string;
   size: number;
   onion: boolean;
   playing: boolean;
   playFrame: number | null;
   canUndo: boolean;
   canRedo: boolean;
+  selection: boolean;
   persistent: boolean;
   zoom: number;
   gpuCels: number;
@@ -186,7 +193,7 @@ export async function setThickness(page: Page, size: number): Promise<void> {
 
 export async function pickColor(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: 'Color' }).click();
-  await page.getByRole('radio', { name }).click();
+  await page.getByRole('radio', { name, exact: true }).click();
 }
 
 export async function addFrame(page: Page): Promise<void> {
@@ -199,3 +206,48 @@ export async function openFrameMenu(page: Page): Promise<void> {
 }
 
 export const hLine = (y: number, p = 0.6): DocPoint[] => line({ x: 300, y, p }, { x: 1500, y, p }, 40);
+
+/** Drags with the mouse between two document positions, as one stroke. */
+export async function drag(page: Page, from: DocPoint, to: DocPoint, steps = 12): Promise<void> {
+  const a = await page.evaluate((p) => window.__flipbook.docToClient(p.x, p.y), from);
+  const b = await page.evaluate((p) => window.__flipbook.docToClient(p.x, p.y), to);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps });
+  await page.mouse.up();
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+export async function tapDoc(page: Page, x: number, y: number): Promise<void> {
+  const c = await page.evaluate(([x, y]) => window.__flipbook.docToClient(x!, y!), [x, y]);
+  await page.mouse.click(c.x, c.y);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+export async function openMenu(page: Page, item: string): Promise<void> {
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.locator('#menu').getByText(item, { exact: true }).click();
+}
+
+/** Waits for the app to come back after it reloaded into another project. */
+export async function waitForProject(page: Page, differentFrom: string): Promise<void> {
+  await page.waitForFunction(
+    (old) => {
+      try {
+        return !!window.__flipbook && window.__flipbook.status().project !== old;
+      } catch {
+        return false;
+      }
+    },
+    differentFrom,
+  );
+  await settle(page);
+}
+
+/** A closed square outline drawn with four strokes, for fill tests. */
+export async function square(page: Page, x0: number, y0: number, x1: number, y1: number): Promise<void> {
+  await stroke(page, line({ x: x0, y: y0, p: 1 }, { x: x1, y: y0, p: 1 }, 20));
+  await stroke(page, line({ x: x1, y: y0, p: 1 }, { x: x1, y: y1, p: 1 }, 20));
+  await stroke(page, line({ x: x1, y: y1, p: 1 }, { x: x0, y: y1, p: 1 }, 20));
+  await stroke(page, line({ x: x0, y: y1, p: 1 }, { x: x0, y: y0, p: 1 }, 20));
+}

@@ -74,6 +74,12 @@ export class CelCache {
     return pending;
   }
 
+  /** Throws a drawing away (it was created by mistake, or is no longer wanted on the GPU). */
+  drop(id: number): void {
+    this.ready.delete(id);
+    this.renderer.deleteCel(id);
+  }
+
   /** Forgets everything: the GPU context was rebuilt and all textures are gone. */
   reset(): void {
     this.ready.clear();
