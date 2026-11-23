@@ -1,6 +1,8 @@
 /// <reference lib="webworker" />
 // Storage worker: compression and file writes happen here, off the drawing thread.
 
+import { parseProject, usedCels } from '../doc/project';
+import { tileCount, tileRect } from '../doc/tiles';
 import { unzip, zip, type ZipEntry } from '../util/zip';
 import { MemoryStorage, type Storage } from './backend';
 import { CelStore } from './celStore';
@@ -14,6 +16,9 @@ let storage: Storage | null = null;
 let root: CelStore | null = null;
 /** The project being edited. */
 let store: CelStore | null = null;
+/** The byte size every tile must have; set from the document size at start-up. */
+let tileBytes: (index: number) => number | null = () => null;
+let docSize = { width: 0, height: 0 };
 
 const projectFolder = (project: string): string => {
   if (!/^[a-z0-9-]{1,40}$/.test(project)) throw new Error('Bad project id');
@@ -23,6 +28,14 @@ const projectFolder = (project: string): string => {
 
 async function handle(req: Request): Promise<{ result: unknown; transfer?: Transferable[] }> {
   if (req.type === 'init') {
+    const { width, height } = req;
+    docSize = { width, height };
+    const count = tileCount(width, height);
+    tileBytes = (index) => {
+      if (!Number.isInteger(index) || index < 0 || index >= count) return null;
+      const r = tileRect(index, width, height);
+      return r.w * r.h * 4;
+    };
     storage = (await openOpfs()) ?? new MemoryStorage();
     root = new CelStore(await storage.open('root'));
     return { result: { persistent: storage.persistent, index: await root.getManifest() } };
@@ -32,7 +45,7 @@ async function handle(req: Request): Promise<{ result: unknown; transfer?: Trans
     case 'putIndex':
       return { result: await root.putManifest(req.text) };
     case 'open':
-      store = new CelStore(await storage.open(projectFolder(req.project)));
+      store = new CelStore(await storage.open(projectFolder(req.project)), tileBytes);
       return { result: await store.getManifest() };
     case 'deleteProject':
       return { result: await storage.destroy(projectFolder(req.project)) };
@@ -40,12 +53,20 @@ async function handle(req: Request): Promise<{ result: unknown; transfer?: Trans
       const entries = unzip(req.file);
       const manifest = entries.find((e) => e.name === 'manifest.json');
       if (!manifest) throw new Error('Not a project file');
-      const target = new CelStore(await storage.open(projectFolder(req.project)));
-      for (const entry of entries) {
-        const match = /^cels\/(\d+)\.bin$/.exec(entry.name);
-        if (match) await target.putPacked(Number(match[1]), entry.data);
-      }
       const text = new TextDecoder().decode(manifest.data);
+      const project = parseProject(text, docSize.width, docSize.height);
+      if (!project) throw new Error('Not a project file');
+      // Every drawing the project refers to must be in the file: a truncated
+      // file should be refused, not opened with blank frames.
+      const cels = new Map<number, Uint8Array>();
+      for (const entry of entries) {
+        const match = /^cels\/(\d{1,9})\.bin$/.exec(entry.name);
+        if (match) cels.set(Number(match[1]), entry.data);
+      }
+      const wanted = usedCels(project);
+      if (wanted.some((id) => !cels.has(id))) throw new Error('Damaged project file');
+      const target = new CelStore(await storage.open(projectFolder(req.project)), tileBytes);
+      for (const id of wanted) await target.putPacked(id, cels.get(id)!);
       await target.putManifest(text);
       return { result: text };
     }

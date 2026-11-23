@@ -9,7 +9,14 @@ const WHITE = [255, 255, 255, 255];
 const undo = (page: Page) => page.getByRole('button', { name: 'Undo' }).click();
 
 async function download(page: Page, trigger: () => Promise<void>): Promise<{ path: string; name: string; bytes: Buffer }> {
-  const [file] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), trigger()]);
+  // Making the file ends with a "Ready" dialog; its Save button hands the file over.
+  const [file] = await Promise.all([
+    page.waitForEvent('download', { timeout: 60_000 }),
+    (async () => {
+      await trigger();
+      await page.locator('#ready-save').click();
+    })(),
+  ]);
   const path = await file.path();
   const { readFile } = await import('node:fs/promises');
   return { path, name: file.suggestedFilename(), bytes: await readFile(path) };
@@ -220,6 +227,34 @@ test.describe('lasso', () => {
     expect((await pixel(page, 960, 540))[3]).toBe(255);
   });
 
+  test('a floating selection never makes other buttons ignore the user', async ({ page }) => {
+    await openApp(page);
+    await setThickness(page, 30);
+    await stroke(page, hLine(500, 1));
+    await page.getByRole('button', { name: 'Lasso' }).click();
+    await lasso(page);
+    await drag(page, { x: 500, y: 500 }, { x: 500, y: 800 });
+
+    // Undo puts the selection down and then takes that move back.
+    await undo(page);
+    await settle(page);
+    expect(await status(page)).toMatchObject({ selection: false, canRedo: true });
+    expect((await pixel(page, 500, 500))[3]).toBe(255);
+    expect(await pixel(page, 500, 800)).toEqual(BLANK);
+
+    await lasso(page);
+    await drag(page, { x: 500, y: 500 }, { x: 500, y: 200 });
+    await addFrame(page);
+    expect(await status(page)).toMatchObject({ selection: false, frame: 1, frames: 2 });
+    await page.keyboard.press('ArrowLeft');
+    await settle(page);
+    expect((await pixel(page, 500, 200))[3], 'the move was kept').toBe(255);
+
+    await lasso(page);
+    await page.getByRole('button', { name: 'Play' }).click();
+    expect(await status(page)).toMatchObject({ selection: false, playing: true });
+  });
+
   test('changing frame puts the selection down first', async ({ page }) => {
     await openApp(page);
     await addFrame(page);
@@ -382,6 +417,7 @@ test.describe('movies and project files', () => {
     expect(file.bytes.readUInt16LE(8)).toBe(540);
     expect(file.bytes.length).toBeGreaterThan(2000);
     await expect(page.locator('#busy')).toBeHidden();
+    await expect(page.locator('#ready')).toBeHidden();
   });
 
   test('makes an MP4 where the browser can encode one', async ({ page }) => {
@@ -431,6 +467,25 @@ test.describe('movies and project files', () => {
     await page.keyboard.press('ArrowRight');
     await settle(page);
     expect(await pixel(page, 900, 700)).toEqual([229, 56, 59, 255]);
+  });
+
+  test('a project file with a drawing missing is refused, not opened with blank frames', async ({ page }) => {
+    await openApp(page);
+    test.skip(!(await status(page)).persistent, 'needs storage that survives a reload');
+    await animation(page);
+    await settle(page);
+    const file = await download(page, () => openMenu(page, 'Save project file'));
+    // Rename one drawing inside the archive so the manifest points at nothing.
+    const broken = Buffer.from(file.bytes);
+    let at = broken.indexOf('cels/');
+    while (at >= 0) {
+      broken.write('xels/', at, 'latin1');
+      at = broken.indexOf('cels/', at);
+    }
+    await page.getByRole('button', { name: 'Projects' }).click();
+    await page.locator('#file-project').setInputFiles({ name: 'broken.flipbook', mimeType: 'application/zip', buffer: broken });
+    await expect(page.locator('#toast')).toHaveText('That is not a Flipbook project file');
+    expect((await status(page)).projects).toHaveLength(1);
   });
 
   test('a file that is not a project is refused', async ({ page }) => {
@@ -491,6 +546,49 @@ test.describe('projects', () => {
     await waitForProject(page, first);
     expect(await status(page)).toMatchObject({ frames: 1, canUndo: false });
     expect(await pixel(page, 900, 500)).toEqual(BLANK);
+  });
+
+  test('saved data that cannot be read is never written over', async ({ page }) => {
+    await openApp(page);
+    test.skip(!(await status(page)).persistent, 'needs storage that survives a reload');
+    await stroke(page, hLine(500, 1));
+    await settle(page);
+    // Replace the manifest with one from a "future version", in the store's own slot format.
+    const written = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const dir = await root.getDirectoryHandle('project');
+      const payload = new TextEncoder().encode(JSON.stringify({ version: 99, secret: 'keep me' }));
+      const file = new Uint8Array(12 + payload.length);
+      const view = new DataView(file.buffer);
+      view.setUint32(0, 0x314b4246, true);
+      view.setUint32(4, 1_000_000, true);
+      view.setUint32(8, payload.length, true);
+      file.set(payload, 12);
+      const handle = await dir.getFileHandle('manifest.a', { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(file);
+      await writable.close();
+      return Array.from(file);
+    });
+    await page.reload();
+    await page.waitForFunction(() => !!window.__flipbook);
+    await settle(page);
+    await expect(page.locator('#toast')).toContainText('could not be opened and was left untouched');
+    const s = await status(page);
+    expect(s.project).not.toBe('project');
+    expect(s.projects).toHaveLength(2);
+    await stroke(page, hLine(300, 1));
+    await settle(page);
+    const after = await page.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const dir = await root.getDirectoryHandle('project');
+      const names: string[] = [];
+      for await (const name of (dir as unknown as { keys(): AsyncIterable<string> }).keys()) names.push(name);
+      const file = await (await dir.getFileHandle('manifest.a')).getFile();
+      return { bytes: Array.from(new Uint8Array(await file.arrayBuffer())), cels: names.filter((n) => n.startsWith('cel-')).length };
+    });
+    expect(after.bytes).toEqual(written);
+    expect(after.cels, 'its drawings were not garbage-collected').toBeGreaterThan(0);
   });
 
   test('a project made by the first version of the app still opens', async ({ page }) => {

@@ -139,6 +139,12 @@ export function installLasso(ed: Editor): void {
     ed.finishEdit(s.edit, bounds);
   };
   ed.onCommitPending(commit);
+  // The selection's texture is gone with the GPU context: forget it. The core drops the edit.
+  ed.onAbort(() => {
+    path = [];
+    handle = null;
+    release();
+  });
 
   /** Throws the selection away, leaving the hole it was lifted from. */
   const remove = (): void => {

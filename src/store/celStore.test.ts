@@ -91,6 +91,48 @@ describe('CelStore', () => {
     expect(tiles.find((t) => t.index === 9)!.data).toEqual(noise());
   });
 
+  describe('with tile sizes known', () => {
+    const SIZE = 256 * 256 * 4;
+    const sizes = (index: number) => (index >= 0 && index < 40 ? SIZE : null);
+    const packedFrom = async (changes: { index: number; data: Uint8Array }[]) => {
+      const loose = new CelStore(new MemoryBackend());
+      await loose.putTiles(1, changes);
+      return loose.getPacked(1);
+    };
+
+    it('accepts a well-formed drawing from a project file', async () => {
+      const store = new CelStore(new MemoryBackend(), sizes);
+      await store.putPacked(7, await packedFrom([{ index: 3, data: tile(9) }]));
+      expect((await store.getCel(7))[0]!.data).toEqual(tile(9));
+    });
+
+    it('refuses a tile that expands past its size, without inflating all of it', async () => {
+      // 64 MB of zeros compresses to a few kilobytes: a small file that would blow up in memory.
+      const bomb = await packedFrom([{ index: 0, data: new Uint8Array(64 * 1024 * 1024) }]);
+      expect(bomb.length).toBeLessThan(100_000);
+      const store = new CelStore(new MemoryBackend(), sizes);
+      await expect(store.putPacked(7, bomb)).rejects.toThrow('Damaged project file');
+      expect(await store.getCel(7)).toEqual([]);
+    });
+
+    it('refuses tiles that are too small, misplaced, or not compressed data', async () => {
+      const store = new CelStore(new MemoryBackend(), sizes);
+      await expect(store.putPacked(1, await packedFrom([{ index: 0, data: tile(1, 100) }]))).rejects.toThrow();
+      await expect(store.putPacked(2, await packedFrom([{ index: 40, data: tile(1) }]))).rejects.toThrow();
+      await expect(store.putPacked(3, await packedFrom([{ index: 0, data: noise(SIZE - 4) }]))).rejects.toThrow();
+      const garbage = await packedFrom([{ index: 0, data: tile(1) }]);
+      garbage.fill(0xff, 11); // overwrite the compressed bytes
+      await expect(store.putPacked(4, garbage)).rejects.toThrow();
+    });
+
+    it('skips a damaged tile already in storage instead of returning it', async () => {
+      const backend = new MemoryBackend();
+      await new CelStore(backend).putTiles(1, [{ index: 0, data: tile(1, 100) }, { index: 1, data: tile(2) }]);
+      const tiles = await new CelStore(backend, sizes).getCel(1);
+      expect(tiles.map((t) => t.index)).toEqual([1]);
+    });
+  });
+
   it('collects drawings that are no longer referenced', async () => {
     const backend = new MemoryBackend();
     const store = new CelStore(backend);

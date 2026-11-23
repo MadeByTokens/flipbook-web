@@ -19,6 +19,8 @@ export class History {
   constructor(
     private readonly budgetBytes: number,
     private readonly onChange: () => void = () => {},
+    /** Told when an undo or redo could not be carried out. */
+    private readonly onError: (error: unknown) => void = () => {},
   ) {}
 
   get canUndo(): boolean {
@@ -64,6 +66,11 @@ export class History {
           await run(action);
           to.push(action);
         }
+      } catch (error) {
+        // Keep the action where it was so it can be tried again, and never let
+        // the failure reach the chain: a rejected chain would block every later step.
+        if (action) from.push(action);
+        this.onError(error);
       } finally {
         this.running--;
         this.onChange();

@@ -22,6 +22,32 @@ async function pipe(data: Uint8Array, transform: CompressionStream | Decompressi
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+/**
+ * Decompresses a tile that must come out at exactly `size` bytes. Reading stops
+ * as soon as the output grows past that, so a file crafted to expand into
+ * gigabytes cannot exhaust memory. Returns null for anything else.
+ */
+async function inflateExactly(data: Uint8Array, size: number): Promise<Bytes | null> {
+  const out = new Uint8Array(size);
+  let length = 0;
+  const reader = new Blob([data as Bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (length + value.length > size) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      out.set(value, length);
+      length += value.length;
+    }
+  } catch {
+    return null; // not valid compressed data
+  }
+  return length === size ? out : null;
+}
+
 /** Returns flag + bytes, keeping the raw tile when compression does not help. */
 async function pack(data: Uint8Array): Promise<{ flag: number; bytes: Uint8Array }> {
   const deflated = await pipe(data, new CompressionStream('deflate-raw'));
@@ -37,7 +63,14 @@ export class CelStore {
   private readonly cels = new Map<number, Map<number, Packed>>();
   private readonly slots = new Map<string, { seq: number; slot: Slot }>();
 
-  constructor(private readonly backend: Backend) {}
+  /**
+   * @param tileBytes The byte size a tile must have, or null for an index that
+   *   does not exist. When given, stored and imported tiles are checked against it.
+   */
+  constructor(
+    private readonly backend: Backend,
+    private readonly tileBytes?: (index: number) => number | null,
+  ) {}
 
   get persistent(): boolean {
     return this.backend.persistent;
@@ -141,9 +174,21 @@ export class CelStore {
     return this.encode(await this.load(id));
   }
 
-  /** Stores a drawing that is already in its compressed form. */
+  /**
+   * Stores a drawing that is already in its compressed form, as found in a
+   * project file. The file may come from anywhere, so every tile is checked:
+   * it must be a real tile position and hold exactly that tile's pixels.
+   */
   async putPacked(id: number, payload: Uint8Array): Promise<void> {
-    this.cels.set(id, this.decode(payload));
+    const tiles = this.decode(payload);
+    if (this.tileBytes) {
+      for (const [index, t] of tiles) {
+        const size = this.tileBytes(index);
+        const ok = size !== null && (t.flag === RAW ? t.bytes.length === size : (await inflateExactly(t.bytes, size)) !== null);
+        if (!ok) throw new Error('Damaged project file');
+      }
+    }
+    this.cels.set(id, tiles);
     await this.save(id);
   }
 
@@ -161,8 +206,15 @@ export class CelStore {
     const tiles = await this.load(id);
     const out: { index: number; data: Uint8Array }[] = [];
     for (const [index, t] of tiles) {
-      const data = t.flag === RAW ? t.bytes.slice() : await pipe(t.bytes, new DecompressionStream('deflate-raw'));
-      out.push({ index, data });
+      if (!this.tileBytes) {
+        out.push({ index, data: t.flag === RAW ? t.bytes.slice() : await pipe(t.bytes, new DecompressionStream('deflate-raw')) });
+        continue;
+      }
+      // A tile that does not fit its position is skipped rather than handed to the GPU.
+      const size = this.tileBytes(index);
+      if (size === null) continue;
+      const data = t.flag === RAW ? (t.bytes.length === size ? t.bytes.slice() : null) : await inflateExactly(t.bytes, size);
+      if (data) out.push({ index, data });
     }
     return out;
   }

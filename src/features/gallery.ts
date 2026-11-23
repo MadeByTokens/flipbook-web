@@ -135,6 +135,11 @@ export function installGallery(ed: Editor, updateThumb: () => void): void {
         await ed.openProject(id);
       })
       .catch(async () => {
+        const ghost = ed.projects.findIndex((p) => p.id === id);
+        if (ghost >= 0) {
+          ed.projects.splice(ghost, 1);
+          ed.saveIndex();
+        }
         await ed.store.deleteProject(id).catch(() => {});
         ed.toast('That is not a Flipbook project file');
       });

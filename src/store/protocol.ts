@@ -1,7 +1,7 @@
 import type { TileChange } from './celStore';
 
 export type Request =
-  | { type: 'init' }
+  | { type: 'init'; width: number; height: number }
   | { type: 'putIndex'; text: string }
   | { type: 'open'; project: string }
   | { type: 'deleteProject'; project: string }

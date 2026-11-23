@@ -327,7 +327,7 @@ test('long animations stay within the GPU budget and keep every drawing', async 
     await addFrame(page);
   }
   await settle(page);
-  expect((await status(page)).gpuCels).toBeLessThanOrEqual(40);
+  expect((await status(page)).gpuCels).toBeLessThanOrEqual(48);
   // Frame 1 was evicted long ago; it must come back from storage intact.
   for (let i = 0; i < 61; i++) await page.keyboard.press('ArrowLeft');
   await settle(page);

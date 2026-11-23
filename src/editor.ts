@@ -75,7 +75,10 @@ export interface Editor {
   /** Index of the column shown on the current frame. */
   column(): number;
   activeLayer(): Layer;
-  /** False while playing, undoing, exporting or in the middle of another edit. */
+  /**
+   * Whether a new action may start: false while playing, undoing, exporting or
+   * mid-stroke. A floating selection is put down first, so it never blocks.
+   */
   canEdit(): boolean;
   /** Runs a change to frames, layers or settings and records it for undo. */
   mutate(change: () => void): void;
@@ -93,6 +96,8 @@ export interface Editor {
   /** Finishes anything half-done (such as a floating selection) before the context changes. */
   commitPending(): void;
   onCommitPending(callback: () => void): void;
+  /** Called when work in progress must be dropped without saving (the GPU context was lost). */
+  onAbort(callback: () => void): void;
 
   registerTool(tool: Tool, handler: ToolHandler): void;
   setTool(tool: Tool): void;

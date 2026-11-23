@@ -37,11 +37,12 @@ const DOC_HEIGHT = 1080;
 const RESERVE = { top: 58, right: 14, bottom: 96, left: 74 };
 const NO_RESERVE = { top: 0, right: 0, bottom: 0, left: 0 };
 /** Drawings kept on the GPU at once (8.3 MB each). */
-const GPU_CELS = 40;
+const GPU_CELS = 48;
 /** Drawings that prefetching may request around the current frame. */
 const PREFETCH_CELS = 28;
 const UNDO_BUDGET = 192 * 1024 * 1024;
-const PLAY_AHEAD = 6;
+/** Drawings that playback may load ahead of the playhead. */
+const PLAY_AHEAD_CELS = 28;
 const ONION_BEFORE: Rgb = [0.9, 0.16, 0.2];
 const ONION_AFTER: Rgb = [0.1, 0.62, 0.3];
 const ONION_OPACITY = 0.35;
@@ -80,7 +81,7 @@ export async function startApp(): Promise<void> {
   const params = new URLSearchParams(location.search);
 
   // --- which project ----------------------------------------------------------
-  const { persistent, index } = await store.init();
+  const { persistent, index } = await store.init(DOC_WIDTH, DOC_HEIGHT);
   const projects = parseIndex(index);
   const wanted = location.hash.slice(1) || localStorage.getItem(LAST_PROJECT_KEY) || '';
   let info = projects.find((p) => p.id === wanted) ?? projects[0];
@@ -89,12 +90,22 @@ export async function startApp(): Promise<void> {
     info = { id: 'project', name: 'My animation', modified: Date.now() };
     projects.push(info);
   }
+  let manifest = await store.open(info.id);
+  let saved = manifest ? parseProject(manifest, DOC_WIDTH, DOC_HEIGHT) : null;
+  let unreadable: string | null = null;
+  if (manifest && !saved) {
+    // Saved data exists but cannot be understood (damaged, or made by a newer
+    // version). It must not be written over: leave it alone and start elsewhere.
+    unreadable = info.name;
+    info = { id: `p${Date.now().toString(36)}`, name: 'My animation', modified: Date.now() };
+    projects.push(info);
+    manifest = await store.open(info.id);
+    saved = manifest ? parseProject(manifest, DOC_WIDTH, DOC_HEIGHT) : null;
+    if (manifest && !saved) throw new Error('Storage on this device could not be read.');
+  }
   const projectId = info.id;
   localStorage.setItem(LAST_PROJECT_KEY, projectId);
   if (location.hash.slice(1) !== projectId) history.replaceState(null, '', `#${projectId}`);
-
-  const manifest = await store.open(projectId);
-  const saved = manifest ? parseProject(manifest, DOC_WIDTH, DOC_HEIGHT) : null;
   // Settings chosen in the "new project" dialog travel across the reload here.
   let fresh: { id?: string; fps?: number; color?: string } = {};
   try {
@@ -114,7 +125,15 @@ export async function startApp(): Promise<void> {
     inputMode: (params.get('input') === 'touch' ? 'touch' : 'pointer') as InputMode,
     predict: caps.predicted,
   };
-  let playing: { start: number; from: number; frame: number; items: SceneItem[]; view: typeof renderer.view } | null = null;
+  let playing: {
+    start: number;
+    from: number;
+    frame: number;
+    items: SceneItem[];
+    view: typeof renderer.view;
+    /** Canvas size when playback started, to notice a rotation. */
+    size: string;
+  } | null = null;
   let editing: PixelEdit | null = null;
   let blocked = false;
 
@@ -244,6 +263,7 @@ export async function startApp(): Promise<void> {
     for (const c of [col, col - 1, col + 1]) {
       if (c >= 0 && c < project.columns.length) for (const id of columnCels(c)) pinned.add(id);
     }
+    if (editing) pinned.add(editing.celId);
     cache.pinned = pinned;
     let budget = PREFETCH_CELS;
     for (let d = 0; d < project.columns.length && budget > 0; d++) {
@@ -291,7 +311,14 @@ export async function startApp(): Promise<void> {
   };
 
   // --- project changes and undo -----------------------------------------------------
-  const undoHistory = new History(UNDO_BUDGET, () => updateButtons());
+  const undoHistory = new History(
+    UNDO_BUDGET,
+    () => updateButtons(),
+    () => {
+      toast('That could not be undone. Try again.');
+      refresh();
+    },
+  );
   const saveManifest = (): void => {
     store.putManifest(JSON.stringify(project));
     touchProject();
@@ -343,20 +370,28 @@ export async function startApp(): Promise<void> {
 
   const goTo = (frame: number): void => {
     const next = clampFrame(project.columns, frame);
-    if (next === state.frame) return;
+    // Moving away mid-stroke would pull the drawing out from under the pencil.
+    if (next === state.frame || stamper) return;
     commitPending();
     state.frame = next;
     refresh();
   };
   const setLayer = (index: number): void => {
     const next = Math.min(Math.max(0, index), project.layers.length - 1);
-    if (next === state.layer) return;
+    if (next === state.layer || stamper) return;
     commitPending();
     state.layer = next;
     refresh();
   };
 
-  const canEdit = (): boolean => !playing && !undoHistory.busy && !editing && !blocked;
+  /**
+   * Whether a new action may start. A floating selection is put down first,
+   * so it never makes the rest of the app ignore the user.
+   */
+  const canEdit = (): boolean => {
+    if (!stamper) commitPending();
+    return !playing && !undoHistory.busy && !editing && !blocked;
+  };
   const newCelId = (): number => project.nextCelId++;
 
   /** Copies a drawing under a new id, on the GPU if it is loaded and always in storage. */
@@ -443,10 +478,11 @@ export async function startApp(): Promise<void> {
       const layerIndex = project.layers.findIndex((l) => l.id === edit.layerId);
       const layer = project.layers[layerIndex];
       if (!layer || edit.column >= project.columns.length) return;
+      // Load first: if storage fails here, nothing has been changed yet.
+      await cache.ensure(edit.celId);
       layer.cels[edit.column] = edit.celId;
       state.layer = layerIndex;
       if (column() !== edit.column) state.frame = startOf(project.columns, edit.column);
-      await cache.ensure(edit.celId);
       const changes = tiles.map((t) => ({ index: t.index, data: t[which] }));
       for (const c of changes) {
         const r = tileRect(c.index, DOC_WIDTH, DOC_HEIGHT);
@@ -483,6 +519,7 @@ export async function startApp(): Promise<void> {
     } else if (!cache.isReady(id)) {
       return null;
     }
+    cache.pinned.add(id);
     renderer.beginStroke(id);
     editing = { layerId: layer.id, column: col, celId: id, created };
     return editing;
@@ -495,6 +532,18 @@ export async function startApp(): Promise<void> {
     cache.drop(edit.celId);
   };
   const finishEdit = (edit: PixelEdit, d: Bounds | null): boolean => {
+    try {
+      return recordEdit(edit, d);
+    } catch {
+      // The drawing vanished from the GPU (a lost context, for instance). Give up on
+      // this edit rather than leave the editor waiting for it forever.
+      abandon(edit);
+      toast('That change could not be kept');
+      refresh();
+      return false;
+    }
+  };
+  const recordEdit = (edit: PixelEdit, d: Bounds | null): boolean => {
     const region = d && tileAlign(d.x0, d.y0, d.x1, d.y1, DOC_WIDTH, DOC_HEIGHT);
     const tiles: TileDiff[] = [];
     if (region) {
@@ -525,20 +574,24 @@ export async function startApp(): Promise<void> {
     return true;
   };
   const cancelEdit = (edit: PixelEdit): void => {
-    renderer.cancelStroke(edit.celId);
+    try {
+      renderer.cancelStroke(edit.celId);
+    } catch {
+      // Nothing to restore if the drawing is no longer on the GPU.
+    }
     abandon(edit);
     requestRender();
   };
 
   const undo = (): void => {
-    if (playing || editing || blocked) return;
+    if (stamper) return;
     commitPending();
-    void undoHistory.undo();
+    if (!playing && !editing && !blocked) void undoHistory.undo();
   };
   const redo = (): void => {
-    if (playing || editing || blocked) return;
+    if (stamper) return;
     commitPending();
-    void undoHistory.redo();
+    if (!playing && !editing && !blocked) void undoHistory.redo();
   };
 
   // --- brush and eraser ------------------------------------------------------------------
@@ -620,23 +673,35 @@ export async function startApp(): Promise<void> {
 
   // --- playback -----------------------------------------------------------------------
   const play = (): void => {
-    if (playing || editing || undoHistory.busy || blocked) return;
-    commitPending();
+    if (playing || !canEdit()) return;
     closePopover();
-    playing = { start: performance.now(), from: state.frame, frame: state.frame, items: frameItems(column()), view: renderer.view };
+    playing = {
+      start: performance.now(),
+      from: state.frame,
+      frame: state.frame,
+      items: frameItems(column()),
+      view: renderer.view,
+      size: `${canvas.width}x${canvas.height}`,
+    };
     document.body.classList.add('playing');
     el('play-hint').hidden = false;
     fit(NO_RESERVE);
   };
   const stop = (): void => {
     if (!playing) return;
-    renderer.view = playing.view;
+    const { view, size } = playing;
     playing = null;
     document.body.classList.remove('playing');
     el('play-hint').hidden = true;
+    // Go back to the view from before, unless the screen was rotated meanwhile.
+    if (size === `${canvas.width}x${canvas.height}`) {
+      renderer.view = view;
+      viewChanged();
+    } else {
+      fit();
+    }
     prefetch();
     timeline.render();
-    viewChanged();
   };
   document.addEventListener(
     'pointerdown',
@@ -659,10 +724,13 @@ export async function startApp(): Promise<void> {
       const count = frameCount(project.columns);
       playing.frame = (playing.from + Math.floor(((now - playing.start) / 1000) * project.fps)) % count;
       const col = locate(project.columns, playing.frame);
+      // Load ahead of the playhead, but never more than fits on the GPU at once.
       const pinned = new Set<number>();
-      for (let i = 0; i <= PLAY_AHEAD; i++) {
-        const ahead = (col + i) % project.columns.length;
-        for (const id of columnCels(ahead)) {
+      let budget = PLAY_AHEAD_CELS;
+      for (let i = 0; i < project.columns.length && (i <= 1 || budget > 0); i++) {
+        const ids = columnCels((col + i) % project.columns.length);
+        budget -= ids.length;
+        for (const id of ids) {
           if (i <= 1) pinned.add(id);
           if (!cache.isReady(id)) void cache.ensure(id);
         }
@@ -696,11 +764,21 @@ export async function startApp(): Promise<void> {
     if (stamper || playing || ui.hud) requestRender();
     else perf.idle();
   };
+  const abortCallbacks: (() => void)[] = [];
   renderer.onRestored = () => {
+    // Every texture is gone, including the one being drawn on. Whatever was in
+    // progress is dropped; drawings come back from storage as they were last saved.
+    stamper = null;
+    stroke = null;
+    activeTool = null;
+    predicted = [];
+    commit.clear();
+    dirty = null;
+    for (const cb of abortCallbacks) cb();
+    if (editing) abandon(editing);
     cache.reset();
     thumbs.clear();
-    prefetch();
-    requestRender();
+    refresh();
   };
 
   // --- input ------------------------------------------------------------------------------
@@ -924,7 +1002,31 @@ export async function startApp(): Promise<void> {
       busyEl.hidden = true;
     }
   };
-  const saveFile = async (blob: Blob, name: string): Promise<void> => {
+  /**
+   * Offers a finished file to the user. Making it may have taken long enough
+   * that the browser no longer counts the original tap, and sharing is only
+   * allowed straight after one, so a "Save" button asks for a fresh tap.
+   */
+  const saveFile = (blob: Blob, name: string): Promise<void> =>
+    new Promise((resolve) => {
+      const dialog = el<HTMLDivElement>('ready');
+      const save = el<HTMLButtonElement>('ready-save');
+      const close = el<HTMLButtonElement>('ready-close');
+      el('ready-name').textContent = name;
+      dialog.hidden = false;
+      const done = (): void => {
+        dialog.hidden = true;
+        save.removeEventListener('click', onSave);
+        close.removeEventListener('click', done);
+        resolve();
+      };
+      const onSave = (): void => {
+        void deliver(blob, name).then(done);
+      };
+      save.addEventListener('click', onSave);
+      close.addEventListener('click', done);
+    });
+  const deliver = async (blob: Blob, name: string): Promise<void> => {
     const file = new File([blob], name, { type: blob.type });
     if (navigator.canShare?.({ files: [file] })) {
       try {
@@ -1044,6 +1146,7 @@ export async function startApp(): Promise<void> {
     cancelEdit,
     commitPending,
     onCommitPending: (cb) => void pendingCallbacks.push(cb),
+    onAbort: (cb) => void abortCallbacks.push(cb),
     registerTool: (tool, handler) => void tools.set(tool, handler),
     setTool,
     onToolChange: (cb) => void toolListeners.push(cb),
@@ -1091,6 +1194,7 @@ export async function startApp(): Promise<void> {
     saveManifest();
     saveIndex();
   }
+  if (unreadable) toast(`"${unreadable}" could not be opened and was left untouched`);
 
   // Hooks for automated tests and on-device debugging.
   Object.assign(window, {

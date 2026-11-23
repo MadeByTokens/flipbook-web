@@ -162,6 +162,32 @@ describe('History', () => {
     expect(log).toEqual(['undo huge']);
   });
 
+  it('survives an action that fails, and can try it again', async () => {
+    const log: string[] = [];
+    const errors: unknown[] = [];
+    let broken = true;
+    const h = new History(100, () => {}, (e) => errors.push(e));
+    h.push(action(log, 'a'));
+    h.push({
+      bytes: 1,
+      undo: async () => {
+        if (broken) throw new Error('storage failed');
+        log.push('undo b');
+      },
+      redo: () => {},
+    });
+    await h.undo();
+    expect(errors).toHaveLength(1);
+    expect(h.busy).toBe(false);
+    expect(h.canUndo).toBe(true);
+    expect(h.canRedo).toBe(false);
+    broken = false;
+    await h.undo();
+    await h.undo();
+    expect(log).toEqual(['undo b', 'undo a']);
+    expect(h.busy).toBe(false);
+  });
+
   it('does nothing when there is nothing to undo', async () => {
     const h = new History(10);
     await h.undo();

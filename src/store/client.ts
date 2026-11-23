@@ -46,8 +46,9 @@ export class StoreClient {
     this.request<void>(req).catch((err: Error) => this.fail(err.message));
   }
 
-  init(): Promise<InitResult> {
-    return this.request<InitResult>({ type: 'init' });
+  /** Opens storage. The document size lets the worker check every tile it reads or imports. */
+  init(width: number, height: number): Promise<InitResult> {
+    return this.request<InitResult>({ type: 'init', width, height });
   }
 
   putIndex(text: string): void {
