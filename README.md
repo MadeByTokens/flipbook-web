@@ -1,10 +1,12 @@
 # flipbook-web
 
+![Flipbook: frame-by-frame animation in your browser](docs/brand/social-preview.png)
+
+**Try it: https://madebytokens.github.io/flipbook-web/**
+
 A frame-by-frame 2D animation app that runs entirely in the browser.
 No server, no accounts, no ads, no analytics: drawings never leave the device.
 Hosted as a static site on GitHub Pages and installable to the iPad Home Screen.
-
-Primary target: iPad Air (M4, 2026) with Apple Pencil, in Safari.
 
 ## Goals
 
@@ -148,6 +150,10 @@ npm run check    # type-check, unit tests, build, browser tests
 npm run shots    # only the screenshot run
 ```
 
+The app icons, favicon and banner are cut from one picture, `docs/brand/sheet.jpeg`, by
+`python scripts/make-brand.py` (needs Pillow, NumPy and SciPy). The sheet was made with an
+image generator; the banner's text is added by the script.
+
 ### Where things are
 
 | Path | What |
@@ -167,13 +173,13 @@ npm run shots    # only the screenshot run
 - **Unit tests** (`src/**/*.test.ts`, Vitest) cover pure logic: the stroke engine, project
   model, tiles, undo history, tile store, zip files, flood fill and lasso geometry.
 - **Browser tests** (`tests/e2e`, Playwright) run the built app in WebKit and Chromium at the
-  iPad Air's screen size. They draw with synthetic pencil events (including pressure) and read
+  an iPad's screen size. They draw with synthetic pencil events (including pressure) and read
   pixels back from the drawing layer through the `window.__flipbook` hook. Movies and project
   files are checked by downloading them and reading their bytes.
 - **Screenshots** from `tests/e2e/visual.spec.ts` land in `test-results/shots/` and are reviewed
   by eye for layout and line quality.
-- **On the iPad:** tap the bar-chart button for the stats overlay (frame time, pencil-to-ink
-  latency, sample rate). Its buttons switch between Pointer and Touch Events and toggle
+- **On the iPad:** turn on Performance stats in the menu for frame time, pencil-to-ink
+  latency and sample rate. Its buttons switch between Pointer and Touch Events and toggle
   prediction, so the options can be compared with the same hand. `?hud` and `?input=touch`
   in the URL set the same options at load.
 

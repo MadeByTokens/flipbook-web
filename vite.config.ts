@@ -14,7 +14,7 @@ function serviceWorker(): Plugin {
     generateBundle(_options, bundle) {
       const files = ['./', ...Object.keys(bundle).map((f) => `./${f}`)];
       // Files copied from public/ are not in the bundle; list the ones the app needs.
-      files.push('./manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png');
+      files.push('./manifest.webmanifest', './favicon.png', './icon-180.png', './icon-192.png', './icon-512.png');
       const hash = createHash('sha256');
       for (const [name, chunk] of Object.entries(bundle)) {
         hash.update(name);

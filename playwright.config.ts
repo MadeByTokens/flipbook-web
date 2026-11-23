@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-// CSS-pixel viewport of an 11-inch iPad Air in landscape (2360x1640 at 2x).
+// CSS-pixel viewport of an 11-inch iPad in landscape (2360x1640 at 2x).
 const ipad = { viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2, hasTouch: true };
 
 export default defineConfig({
