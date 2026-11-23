@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { hLine, inkHalfWidth, line, openApp, pickColor, pixel, setThickness, status, stroke } from './helpers';
+import { expectColor, hLine, inkHalfWidth, line, openApp, pickColor, pixel, setThickness, status, stroke } from './helpers';
 
 test('loads with a blank page and no errors', async ({ page }) => {
   const errors = await openApp(page);
@@ -43,7 +43,7 @@ test('the chosen color and thickness are used', async ({ page }) => {
   await expect(page.locator('#color-pop')).toBeHidden();
   await setThickness(page, 60);
   await stroke(page, hLine(540, 1));
-  expect(await pixel(page, 900, 540)).toEqual([229, 56, 59, 255]);
+  expectColor(await pixel(page, 900, 540), [229, 56, 59, 255]);
   expect(await inkHalfWidth(page, 900, 540)).toBeGreaterThanOrEqual(28);
 });
 

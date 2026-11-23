@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   addFrame, drag, hLine, openApp, openMenu, pickColor, pixel, screenPixel, settle, setThickness, square, status,
-  stroke, tapDoc, waitForProject,
+  expectColor, stroke, tapDoc, waitForProject,
 } from './helpers';
 
 const BLANK = [0, 0, 0, 0];
@@ -62,12 +62,12 @@ test.describe('layers', () => {
     expect(await pixel(page, 900, 300), 'layer 2 does not contain layer 1 ink').toEqual(BLANK);
     expect((await pixel(page, 900, 700))[3]).toBe(255);
     expect(await screenPixel(page, 900, 300)).not.toEqual(WHITE);
-    expect(await screenPixel(page, 900, 700)).toEqual([229, 56, 59, 255]);
+    expectColor(await screenPixel(page, 900, 700), [229, 56, 59, 255]);
 
     await openLayers(page);
     await page.getByRole('button', { name: 'Hide Layer 1' }).click();
     expect(await screenPixel(page, 900, 300)).toEqual(WHITE);
-    expect(await screenPixel(page, 900, 700)).toEqual([229, 56, 59, 255]);
+    expectColor(await screenPixel(page, 900, 700), [229, 56, 59, 255]);
     await undo(page);
     await settle(page);
     expect(await screenPixel(page, 900, 300)).not.toEqual(WHITE);
@@ -82,12 +82,12 @@ test.describe('layers', () => {
     await page.keyboard.press('Escape');
     await pickColor(page, 'Yellow');
     await stroke(page, hLine(500, 1)); // yellow on layer 2, covering the black
-    expect(await screenPixel(page, 900, 500)).toEqual([255, 214, 10, 255]);
+    expectColor(await screenPixel(page, 900, 500), [255, 214, 10, 255]);
 
     await openLayers(page);
     await page.getByRole('button', { name: 'Move layer down' }).click();
     expect((await status(page)).layers.map((l) => l.name)).toEqual(['Layer 2', 'Layer 1']);
-    expect(await screenPixel(page, 900, 500), 'black is on top now').toEqual([22, 24, 29, 255]);
+    expectColor(await screenPixel(page, 900, 500), [22, 24, 29, 255], 'black is on top now');
     await page.getByRole('button', { name: 'Move layer up' }).click();
 
     await page.locator('#layer-opacity').fill('50');
@@ -112,7 +112,7 @@ test.describe('layers', () => {
     await undo(page);
     await settle(page);
     expect((await status(page)).layers.map((l) => l.name)).toEqual(['Layer 1', 'Sun']);
-    expect(await screenPixel(page, 900, 500)).not.toEqual([22, 24, 29, 255]);
+    expect((await screenPixel(page, 900, 500))[0], 'yellow is back on top').toBeGreaterThan(100);
   });
 
   test('new frames are empty on every layer, and frames delete across layers', async ({ page }) => {
@@ -146,10 +146,10 @@ test.describe('fill', () => {
     await pickColor(page, 'Green');
     await page.getByRole('button', { name: 'Fill', exact: true }).click();
     await tapDoc(page, 950, 550);
-    expect(await pixel(page, 950, 550)).toEqual([47, 168, 79, 255]);
-    expect(await pixel(page, 700, 400)).toEqual([47, 168, 79, 255]);
+    expectColor(await pixel(page, 950, 550), [47, 168, 79, 255]);
+    expectColor(await pixel(page, 700, 400), [47, 168, 79, 255]);
     expect(await pixel(page, 300, 550), 'outside the shape').toEqual(BLANK);
-    expect(await pixel(page, 600, 550), 'the outline keeps its colour').toEqual([22, 24, 29, 255]);
+    expectColor(await pixel(page, 600, 550), [22, 24, 29, 255], 'the outline keeps its colour');
     // No pale ring between the fill and the line.
     for (let x = 604; x < 640; x += 3) expect((await pixel(page, x, 550))[3]).toBe(255);
 
@@ -164,7 +164,7 @@ test.describe('fill', () => {
     await pickColor(page, 'Blue');
     await page.getByRole('button', { name: 'Fill', exact: true }).click();
     await tapDoc(page, 100, 100);
-    expect(await pixel(page, 1900, 1070)).toEqual([47, 125, 225, 255]);
+    expectColor(await pixel(page, 1900, 1070), [47, 125, 225, 255]);
     await page.getByRole('button', { name: 'Clear' }).click();
     expect(await pixel(page, 100, 100)).toEqual(BLANK);
   });
@@ -281,7 +281,7 @@ test.describe('color', () => {
     await page.keyboard.press('Escape');
     expect((await status(page)).color).toBe('#12ab9c');
     await stroke(page, hLine(500, 1));
-    expect(await pixel(page, 900, 500)).toEqual([0x12, 0xab, 0x9c, 255]);
+    expectColor(await pixel(page, 900, 500), [0x12, 0xab, 0x9c, 255]);
     await page.getByRole('button', { name: 'Color' }).click();
     await expect(page.getByRole('radio', { name: 'Recent #12ab9c' })).toBeVisible();
   });
@@ -309,8 +309,10 @@ test.describe('color', () => {
     await page.getByRole('button', { name: 'Pick from drawing' }).click();
     expect((await status(page)).tool).toBe('eyedropper');
     await tapDoc(page, 900, 500);
-    expect(await status(page)).toMatchObject({ color: '#8e4ec6', tool: 'brush', canUndo: true });
-    expect(await pixel(page, 900, 500)).toEqual([0x8e, 0x4e, 0xc6, 255]);
+    const picked = await status(page);
+    expect(picked).toMatchObject({ tool: 'brush', canUndo: true });
+    expectColor([1, 3, 5].map((i) => parseInt(picked.color.slice(i, i + 2), 16)), [0x8e, 0x4e, 0xc6]);
+    expectColor(await pixel(page, 900, 500), [0x8e, 0x4e, 0xc6, 255]);
   });
 });
 
@@ -355,7 +357,7 @@ test.describe('pictures and background', () => {
     await expect(page.locator('#busy')).toBeHidden();
     await settle(page);
     expect((await status(page)).layers.map((l) => l.name)).toEqual(['Layer 1', 'Picture']);
-    expect(await screenPixel(page, 960, 540)).toEqual([255, 136, 0, 255]);
+    expectColor(await screenPixel(page, 960, 540), [255, 136, 0, 255]);
     await page.keyboard.press('ArrowLeft');
     expect(await screenPixel(page, 960, 540), 'only on the frame it was added to').toEqual(WHITE);
     await undo(page);
@@ -369,21 +371,21 @@ test.describe('pictures and background', () => {
     await openMenu(page, 'Project settings');
     await page.getByRole('radio', { name: 'Sky background' }).click();
     expect((await status(page)).background).toBe('#cfe8ff');
-    expect(await screenPixel(page, 960, 540)).toEqual([0xcf, 0xe8, 0xff, 255]);
+    expectColor(await screenPixel(page, 960, 540), [0xcf, 0xe8, 0xff, 255]);
     await expect(page.getByRole('button', { name: 'Remove picture' })).toBeHidden();
 
     await page.locator('#file-bg').setInputFiles(await picture(page));
     await expect(page.locator('#busy')).toBeHidden();
     await settle(page);
-    expect(await screenPixel(page, 960, 540)).toEqual([255, 136, 0, 255]);
+    expectColor(await screenPixel(page, 960, 540), [255, 136, 0, 255]);
     await page.keyboard.press('ArrowLeft');
     await settle(page);
-    expect(await screenPixel(page, 100, 100), 'the picture covers the whole page').toEqual([255, 136, 0, 255]);
+    expectColor(await screenPixel(page, 100, 100), [255, 136, 0, 255], 'the picture covers the whole page');
     expect(await pixel(page, 960, 540), 'the background is not part of a drawing').toEqual(BLANK);
 
     await openMenu(page, 'Project settings');
     await page.getByRole('button', { name: 'Remove picture' }).click();
-    expect(await screenPixel(page, 960, 540)).toEqual([0xcf, 0xe8, 0xff, 255]);
+    expectColor(await screenPixel(page, 960, 540), [0xcf, 0xe8, 0xff, 255]);
   });
 
   test('a file that is not a picture is refused politely', async ({ page }) => {
@@ -466,7 +468,7 @@ test.describe('movies and project files', () => {
     expect((await pixel(page, 900, 300))[3]).toBe(255);
     await page.keyboard.press('ArrowRight');
     await settle(page);
-    expect(await pixel(page, 900, 700)).toEqual([229, 56, 59, 255]);
+    expectColor(await pixel(page, 900, 700), [229, 56, 59, 255]);
   });
 
   test('a project file with a drawing missing is refused, not opened with blank frames', async ({ page }) => {

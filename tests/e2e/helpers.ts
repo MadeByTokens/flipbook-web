@@ -65,6 +65,8 @@ export async function openApp(page: Page, query = ''): Promise<string[]> {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!window.__flipbook);
   await settle(page);
+  // The first layout pass refits the page; let it happen before a test changes the view.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   return errors;
 }
 
@@ -250,4 +252,13 @@ export async function square(page: Page, x0: number, y0: number, x1: number, y1:
   await stroke(page, line({ x: x1, y: y0, p: 1 }, { x: x1, y: y1, p: 1 }, 20));
   await stroke(page, line({ x: x1, y: y1, p: 1 }, { x: x0, y: y1, p: 1 }, 20));
   await stroke(page, line({ x: x0, y: y1, p: 1 }, { x: x0, y: y0, p: 1 }, 20));
+}
+
+/**
+ * Compares colours allowing for the last-bit rounding differences between
+ * graphics drivers (a channel may come out one step higher or lower).
+ */
+export function expectColor(actual: number[], expected: number[], message?: string): void {
+  const close = actual.length === expected.length && actual.every((v, i) => Math.abs(v - expected[i]!) <= 2);
+  if (!close) throw new Error(`${message ?? 'color'}: expected about [${expected.join(', ')}], got [${actual.join(', ')}]`);
 }
