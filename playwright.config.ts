@@ -7,6 +7,9 @@ export default defineConfig({
   testDir: 'tests/e2e',
   outputDir: 'test-results',
   fullyParallel: true,
+  // The browsers render WebGL in software here; too many at once starve each other.
+  workers: 3,
+  timeout: 90_000,
   reporter: [['list']],
   use: { baseURL: 'http://localhost:4173' },
   webServer: {

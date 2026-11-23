@@ -9,13 +9,33 @@ export interface DocPoint {
 
 export type Rgba = [number, number, number, number];
 
+export interface Status {
+  frame: number;
+  frames: number;
+  cels: { id: number; length: number }[];
+  fps: number;
+  tool: string;
+  size: number;
+  onion: boolean;
+  playing: boolean;
+  playFrame: number | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  persistent: boolean;
+  zoom: number;
+  gpuCels: number;
+}
+
 declare global {
   interface Window {
     __flipbook: {
       docWidth: number;
       docHeight: number;
       docToClient(x: number, y: number): { x: number; y: number };
-      readLayerPixel(x: number, y: number): Rgba;
+      readPixel(x: number, y: number): Rgba;
+      screenPixel(x: number, y: number): Rgba;
+      status(): Status;
+      settled(): Promise<void>;
       perf(): {
         frameMs: { mean: number; p95: number; max: number; count: number };
         latencyMs: { mean: number; p95: number; max: number; count: number };
@@ -37,7 +57,17 @@ export async function openApp(page: Page, query = ''): Promise<string[]> {
   });
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!window.__flipbook);
+  await settle(page);
   return errors;
+}
+
+/** Waits until undo/redo, loading and saving have all finished. */
+export function settle(page: Page): Promise<void> {
+  return page.evaluate(() => window.__flipbook.settled());
+}
+
+export function status(page: Page): Promise<Status> {
+  return page.evaluate(() => window.__flipbook.status());
 }
 
 /**
@@ -83,6 +113,38 @@ export async function stroke(
   );
 }
 
+export interface FingerStep {
+  type: 'down' | 'move' | 'up';
+  id: number;
+  /** Client (CSS pixel) position. */
+  x: number;
+  y: number;
+}
+
+/** Plays a sequence of finger events on the stage, one animation frame apart. */
+export async function fingers(page: Page, steps: FingerStep[]): Promise<void> {
+  await page.evaluate(async (steps) => {
+    const canvas = document.getElementById('stage')!;
+    for (const s of steps) {
+      canvas.dispatchEvent(
+        new PointerEvent(`pointer${s.type}`, {
+          pointerId: s.id,
+          pointerType: 'touch',
+          clientX: s.x,
+          clientY: s.y,
+          pressure: s.type === 'up' ? 0 : 0.5,
+          button: 0,
+          buttons: s.type === 'up' ? 0 : 1,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      if (s.type === 'move') await new Promise((r) => requestAnimationFrame(r));
+    }
+    await new Promise((r) => requestAnimationFrame(r));
+  }, steps);
+}
+
 export function line(from: DocPoint, to: DocPoint, steps: number): DocPoint[] {
   return Array.from({ length: steps + 1 }, (_, i) => {
     const t = i / steps;
@@ -94,8 +156,14 @@ export function line(from: DocPoint, to: DocPoint, steps: number): DocPoint[] {
   });
 }
 
+/** A pixel of the current drawing (no paper). */
 export function pixel(page: Page, x: number, y: number): Promise<Rgba> {
-  return page.evaluate(([x, y]) => window.__flipbook.readLayerPixel(x!, y!), [x, y]);
+  return page.evaluate(([x, y]) => window.__flipbook.readPixel(x!, y!), [x, y]);
+}
+
+/** A pixel of what is on screen, including paper and onion skin. */
+export function screenPixel(page: Page, x: number, y: number): Promise<Rgba> {
+  return page.evaluate(([x, y]) => window.__flipbook.screenPixel(x!, y!), [x, y]);
 }
 
 /** Half the ink width across a horizontal stroke at document x, measured in document pixels. */
@@ -103,9 +171,31 @@ export async function inkHalfWidth(page: Page, x: number, y: number): Promise<nu
   return page.evaluate(
     ([x, y]) => {
       let n = 0;
-      while (n < 200 && window.__flipbook.readLayerPixel(x!, y! + n)[3] > 127) n++;
+      while (n < 200 && window.__flipbook.readPixel(x!, y! + n)[3] > 127) n++;
       return n;
     },
     [x, y],
   );
 }
+
+export async function setThickness(page: Page, size: number): Promise<void> {
+  await page.getByRole('button', { name: 'Thickness' }).click();
+  await page.locator('#size').fill(String(size));
+  await page.keyboard.press('Escape');
+}
+
+export async function pickColor(page: Page, name: string): Promise<void> {
+  await page.getByRole('button', { name: 'Color' }).click();
+  await page.getByRole('radio', { name }).click();
+}
+
+export async function addFrame(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Add frame' }).click();
+}
+
+/** Opens the menu of the current frame by tapping it in the strip. */
+export async function openFrameMenu(page: Page): Promise<void> {
+  await page.locator('#timeline .frame[aria-current="true"]').click();
+}
+
+export const hLine = (y: number, p = 0.6): DocPoint[] => line({ x: 300, y, p }, { x: 1500, y, p }, 40);

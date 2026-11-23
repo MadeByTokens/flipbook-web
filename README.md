@@ -56,12 +56,33 @@ is our own.
 
 ## Phases
 
-1. **Latency spike (current):** one brush, eraser, performance overlay
-2. Core animator: timeline, onion skin, playback, undo, autosave, offline install
+1. Latency spike: one brush, eraser, performance overlay (done)
+2. **Core animator (done, awaiting iPad testing):** frames, holds, onion skin, playback,
+   one undo history, pinch and pan, autosave, offline install
 3. Layers and tools
 4. Export and backup
 5. Audio
 6. Rotoscope and effects
+
+## What works today
+
+The screen follows FlipaClip's Classic layout (see `docs/flipaclip-conventions.md`):
+
+- **Left:** draw tools (brush, eraser), thickness circle (tap for the slider, or press and
+  drag up/down), color box.
+- **Bottom left:** Undo and Redo. One history covers strokes, frames and settings.
+- **Bottom centre:** frame strip. Tap a frame to go to it, drag to scrub, "+" adds a frame
+  after the current one, tap the current frame for Duplicate, Delete and Hold.
+- **Bottom right:** Play (full screen, tap to stop) and Clear (empties the drawing, keeps
+  the frame).
+- **Top right:** fit to screen; three-dots menu with Project settings (frames per second),
+  Onion, and Performance stats.
+- **Fingers:** two-finger pinch and pan. Two-finger tap undoes, three-finger tap redoes.
+- **Keyboard:** arrows change frame, Space plays, O onion skin, E eraser, B brush,
+  Ctrl/Cmd+Z undo.
+
+Drawings are saved after every stroke to the browser's private file system. That needs
+HTTPS (or localhost); over plain HTTP the app still works but shows "Not saving".
 
 ## Development
 
@@ -85,6 +106,10 @@ npm run shots    # only the screenshot run
   latency, sample rate). Its buttons switch between Pointer and Touch Events and toggle
   prediction, so the options can be compared with the same hand. `?hud` and `?input=touch`
   in the URL set the same options at load.
+
+Playwright's WebKit build for Linux has no private file system, so the save-and-reopen test
+only runs in Chromium, as does the offline test. Each Playwright run empties `test-results/`,
+screenshots included.
 
 Playwright's WebKit is not iPad Safari and runs without a GPU here, so its timing numbers mean
 nothing. Performance claims come from the overlay on the device.

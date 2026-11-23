@@ -8,43 +8,109 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Flipbook" />
     <meta name="theme-color" content="#212329" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-180.png" />
     <title>Flipbook</title>
   </head>
   <body>
     <canvas id="stage"></canvas>
 
-    <div id="toolbar" role="toolbar" aria-label="Drawing tools">
-      <button id="tool-brush" class="tool" aria-label="Brush" aria-pressed="true">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20c0-2.5 1.2-4 3.2-4 1.6 0 2.8 1.2 2.8 2.8C10 21 8 22 4 20Zm5.5-5.2 8.9-10.4a1.7 1.7 0 0 1 2.5 2.3L10.9 16l-1.4-1.2Z"/></svg>
-      </button>
-      <button id="tool-eraser" class="tool" aria-label="Eraser" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.1 3.6a2 2 0 0 1 2.8 0l3.5 3.5a2 2 0 0 1 0 2.8L11.8 19.5H20v2H7.6l-4-4a2 2 0 0 1 0-2.8L15.1 3.6ZM9 19.5l2.6-2.6-5-5-2.3 2.3 4 4 .7 1.3Z"/></svg>
-      </button>
-      <span class="sep"></span>
-      <label class="size">
-        <span id="size-dot-box"><span id="size-dot"></span></span>
-        <input id="size" type="range" min="2" max="80" step="1" value="12" aria-label="Brush size" />
-      </label>
-      <span class="sep"></span>
-      <div id="swatches" role="radiogroup" aria-label="Colour"></div>
-      <span class="sep"></span>
-      <button id="clear" class="tool" aria-label="Clear drawing">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h1.5v-8H10Zm2.5 0v8H14v-8h-1.5Z"/></svg>
-      </button>
-      <button id="stats" class="tool" aria-label="Performance stats" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10h3.5v10H4Zm6.25 0V4h3.5v16h-3.5Zm6.25 0v-7H20v7h-3.5Z"/></svg>
-      </button>
-    </div>
+    <div id="chrome">
+      <header id="topbar">
+        <div id="save-status" role="status" hidden></div>
+        <span class="spacer"></span>
+        <button id="fit" class="icon" aria-label="Fit to screen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 0h2v6h-6v-2h4v-4Z"/></svg>
+        </button>
+        <button id="menu-button" class="icon" aria-label="More" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+        </button>
+      </header>
 
-    <div id="hud" hidden>
-      <pre id="hud-text"></pre>
-      <div class="hud-buttons">
-        <button id="hud-input"></button>
-        <button id="hud-predict"></button>
-        <button id="hud-reset">Reset stats</button>
+      <div id="tools" role="toolbar" aria-label="Draw tools" aria-orientation="vertical">
+        <button id="tool-brush" class="icon" aria-label="Brush" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20c0-2.5 1.2-4 3.2-4 1.6 0 2.8 1.2 2.8 2.8C10 21 8 22 4 20Zm5.5-5.2 8.9-10.4a1.7 1.7 0 0 1 2.5 2.3L10.9 16l-1.4-1.2Z"/></svg>
+        </button>
+        <button id="tool-eraser" class="icon" aria-label="Eraser" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.1 3.6a2 2 0 0 1 2.8 0l3.5 3.5a2 2 0 0 1 0 2.8L11.8 19.5H20v2H7.6l-4-4a2 2 0 0 1 0-2.8L15.1 3.6ZM9 19.5l2.6-2.6-5-5-2.3 2.3 4 4 .7 1.3Z"/></svg>
+        </button>
+        <span class="sep"></span>
+        <button id="thickness" class="icon" aria-label="Thickness" aria-haspopup="true" aria-expanded="false">
+          <span id="size-dot"></span>
+        </button>
+        <button id="color" class="icon" aria-label="Color" aria-haspopup="true" aria-expanded="false">
+          <span id="color-box"></span>
+        </button>
+      </div>
+
+      <footer id="bottombar">
+        <div class="group">
+          <button id="undo" class="labelled" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6 3.5 11.5 9 17v-4h5.5a3 3 0 0 1 0 6H12v2h2.5a5 5 0 0 0 0-10H9V6Z"/></svg>
+            <span>Undo</span>
+          </button>
+          <button id="redo" class="labelled" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l5.5 5.5L15 17v-4H9.5a3 3 0 0 0 0 6H12v2H9.5a5 5 0 0 1 0-10H15V6Z"/></svg>
+            <span>Redo</span>
+          </button>
+        </div>
+        <div id="timeline" aria-label="Frames"></div>
+        <div class="group">
+          <span id="frame-counter" aria-live="off"></span>
+          <button id="play" class="icon" aria-label="Play">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7L8 5Z"/></svg>
+          </button>
+          <button id="clear" class="labelled">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm1 2v12h12V6H6Zm3.2 2 2.8 2.8L14.8 8l1.2 1.2-2.8 2.8 2.8 2.8-1.2 1.2-2.8-2.8L9.2 16 8 14.8l2.8-2.8L8 9.2 9.2 8Z"/></svg>
+            <span>Clear</span>
+          </button>
+        </div>
+      </footer>
+
+      <div id="menu" class="popover" role="menu" aria-label="Project menu" hidden>
+        <button id="menu-settings" role="menuitem">Project settings</button>
+        <button id="menu-onion" role="menuitemcheckbox" aria-checked="false">Onion <span class="switch"></span></button>
+        <button id="menu-stats" role="menuitemcheckbox" aria-checked="false">Performance stats <span class="switch"></span></button>
+      </div>
+
+      <div id="settings" class="popover" role="dialog" aria-label="Project settings" hidden>
+        <h2>Project settings</h2>
+        <label for="fps">Frames per second <output id="fps-value"></output></label>
+        <input id="fps" type="range" min="1" max="30" step="1" />
+      </div>
+
+      <div id="thickness-pop" class="popover" role="dialog" aria-label="Brush settings" hidden>
+        <label for="size">Thickness <output id="size-value"></output></label>
+        <input id="size" type="range" min="1" max="100" step="1" />
+      </div>
+
+      <div id="color-pop" class="popover" role="dialog" aria-label="Color" hidden>
+        <div id="swatches" role="radiogroup" aria-label="Color"></div>
+      </div>
+
+      <div id="frame-menu" class="popover" role="menu" aria-label="Frame" hidden>
+        <button id="frame-duplicate" role="menuitem">Duplicate</button>
+        <button id="frame-delete" role="menuitem">Delete</button>
+        <div class="stepper" role="group" aria-label="Hold">
+          <span>Hold</span>
+          <button id="hold-less" aria-label="Hold for fewer frames">&minus;</button>
+          <output id="hold-value"></output>
+          <button id="hold-more" aria-label="Hold for more frames">+</button>
+        </div>
+      </div>
+
+      <div id="hud" hidden>
+        <pre id="hud-text"></pre>
+        <div class="hud-buttons">
+          <button id="hud-input"></button>
+          <button id="hud-predict"></button>
+          <button id="hud-reset">Reset stats</button>
+        </div>
       </div>
     </div>
 
+    <div id="play-hint" hidden>Tap on screen to stop</div>
     <div id="fatal" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

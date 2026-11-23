@@ -1,40 +1,69 @@
-// Renders a representative drawing and saves screenshots for review.
+// Renders representative states and saves screenshots for review.
 // Output goes to test-results/shots/<project>-<name>.png.
 import { expect, test } from '@playwright/test';
-import { line, openApp, stroke, type DocPoint } from './helpers';
+import { addFrame, openApp, openFrameMenu, pickColor, setThickness, settle, stroke, type DocPoint } from './helpers';
 
-function wave(y: number, pressure: (t: number) => number): DocPoint[] {
+function wave(y: number, phase: number, pressure: (t: number) => number): DocPoint[] {
   return Array.from({ length: 161 }, (_, i) => {
     const t = i / 160;
-    return { x: 200 + t * 1500, y: y + Math.sin(t * Math.PI * 4) * 90, p: pressure(t) };
+    return { x: 200 + t * 1500, y: y + Math.sin(t * Math.PI * 4 + phase) * 90, p: pressure(t) };
   });
 }
 
 test('screenshots', async ({ page }, info) => {
-  const shot = (name: string) =>
-    page.screenshot({ path: `test-results/shots/${info.project.name}-${name}.png` });
+  const shot = async (name: string) => {
+    // Let the app draw its next frame before capturing it.
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await page.screenshot({ path: `test-results/shots/${info.project.name}-${name}.png` });
+  };
 
   const errors = await openApp(page);
   await shot('1-empty');
 
-  await stroke(page, wave(250, (t) => 0.05 + 0.95 * t));
-  await page.getByRole('radio', { name: 'Blue' }).click();
-  await page.getByLabel('Brush size').fill('40');
-  await stroke(page, wave(560, (t) => 0.5 - 0.5 * Math.cos(t * Math.PI * 6)));
-  await page.getByRole('radio', { name: 'Red' }).click();
-  await page.getByLabel('Brush size').fill('6');
-  await stroke(page, [{ x: 300, y: 850 }, { x: 700, y: 850 }, { x: 700, y: 1000 }, { x: 1100, y: 1000 }]);
-  await page.getByRole('button', { name: 'Eraser' }).click();
-  await page.getByLabel('Brush size').fill('30');
-  await stroke(page, line({ x: 1300, y: 150, p: 1 }, { x: 1300, y: 700, p: 1 }, 30));
-  await page.getByRole('button', { name: 'Performance stats' }).click();
-  await page.waitForTimeout(400);
-  await shot('2-drawing');
+  // A short animation: a wave that shifts a little on every frame.
+  for (let f = 0; f < 6; f++) {
+    if (f > 0) await addFrame(page);
+    await pickColor(page, 'Black');
+    await setThickness(page, 12);
+    await stroke(page, wave(330, f * 0.5, (t) => 0.1 + 0.9 * t));
+    await pickColor(page, 'Blue');
+    await setThickness(page, 40);
+    await stroke(page, wave(720, f * 0.5, (t) => 0.5 - 0.5 * Math.cos(t * Math.PI * 6)));
+  }
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await settle(page);
+  await shot('2-editor');
+
+  await page.keyboard.press('o');
+  await shot('3-onion');
+
+  await openFrameMenu(page);
+  await shot('4-frame-menu');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: 'More' }).click();
+  await shot('5-menu');
+  await page.getByRole('menuitem', { name: 'Project settings' }).click();
+  await shot('6-settings');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: 'Color' }).click();
+  await shot('7-color');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Thickness' }).click();
+  await shot('8-thickness');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: 'Play' }).click();
+  await page.waitForTimeout(200);
+  await shot('9-playing');
+  await page.mouse.click(600, 400);
 
   // Close-up of the paper so line quality can be judged.
   await page.screenshot({
-    path: `test-results/shots/${info.project.name}-3-closeup.png`,
-    clip: { x: 100, y: 120, width: 500, height: 330 },
+    path: `test-results/shots/${info.project.name}-10-closeup.png`,
+    clip: { x: 150, y: 150, width: 500, height: 330 },
   });
   expect(errors).toEqual([]);
 });
