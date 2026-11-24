@@ -31,6 +31,15 @@ test.describe('help and tooltips', () => {
     await openMenu(page, 'Help');
     await expect(page.locator('#help')).toBeVisible();
     await expect(page.locator('#help')).toContainText('Tap with two fingers to undo');
+    // Every section has its picture, drawn at a real size and named for screen readers.
+    const pictures = page.locator('#help .ill');
+    await expect(pictures).toHaveCount(6);
+    for (const picture of await pictures.all()) {
+      const box = (await picture.boundingBox())!;
+      expect(box.width).toBeGreaterThan(250);
+      expect(box.height).toBeGreaterThan(100);
+      expect((await picture.getAttribute('aria-label'))!.length).toBeGreaterThan(20);
+    }
   });
 
   test('hovering a button explains it', async ({ page }) => {
