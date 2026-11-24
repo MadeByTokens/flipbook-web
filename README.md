@@ -128,6 +128,18 @@ Projects made by earlier versions are upgraded when opened. Saved data that cann
 (damaged, or from a newer version) is never written over: the app starts a new project and
 leaves the old one alone.
 
+## When a device runs short
+
+A browser gives a page no reading of the memory it has left and no warning before closing it. Movies, GIFs and project files are put together in memory, so each is held to a limit that follows the device: reported memory, where the browser gives it, puts the device in one of three classes, and the middle one is assumed without it.
+
+- **Make movie** says how long a video the device can take and offers a GIF when the animation is longer. A GIF is stopped with a message if it outgrows the limit while being made.
+- **Open project file** refuses a file too large to unpack in memory, or one there is no storage left for, before reading it.
+- **Save project file** stops with a message, and leaves the drawings as they are, when the file would be too large.
+- If the page is closed while a movie is being made, Flipbook says so at the next start.
+
+Nothing here is tuned to a particular model.
+
+
 ## Known limits
 
 - Movies have no sound; there is no audio yet.

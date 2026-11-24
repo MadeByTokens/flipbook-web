@@ -1000,10 +1000,14 @@ body.playing #selection-bar {
   left: 50%;
   bottom: calc(var(--bottom) + env(safe-area-inset-bottom, 0px) + 16px);
   transform: translateX(-50%);
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 20px;
   background: rgba(15, 16, 19, 0.92);
   border: 1px solid var(--line);
+  text-align: center;
+  line-height: 1.35;
   pointer-events: none;
 }
 
@@ -1207,4 +1211,8 @@ body.playing #selection-bar {
 
 .ill .lead {
   stroke-width: 1.5;
+}
+
+#movie-info.blocked {
+  color: #ff8a80;
 }

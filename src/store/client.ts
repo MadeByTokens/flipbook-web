@@ -85,8 +85,9 @@ export class StoreClient {
   }
 
   /** The open project as a single file. */
-  exportProject(manifest: string, cels: number[]): Promise<Uint8Array<ArrayBuffer>> {
-    return this.request({ type: 'exportProject', manifest, cels });
+  /** The whole project as one file. Fails with "too large" when it would pass `limit` bytes. */
+  exportProject(manifest: string, cels: number[], limit = Infinity): Promise<Uint8Array<ArrayBuffer>> {
+    return this.request({ type: 'exportProject', manifest, cels, limit });
   }
 
   /** Unpacks a project file into a new project and returns its manifest. */

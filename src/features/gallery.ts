@@ -5,6 +5,8 @@ import { DEFAULT_FPS, parseProject } from '../doc/project';
 import { el, type Editor, type ProjectInfo } from '../editor';
 import { ask } from '../ui/dialog';
 import { closePopover } from '../ui/popover';
+import { openProblem } from '../util/advice';
+import { budget, freeSpace } from '../util/device';
 
 const NEW_PROJECT_KEY = 'flipbook.newProject';
 const newId = (): string => `p${Date.now().toString(36)}`;
@@ -127,8 +129,11 @@ export function installGallery(ed: Editor, updateThumb: () => void): void {
     fileInput.value = '';
     if (!file) return;
     const id = newId();
+    let refused = '';
     void ed
       .busy('Opening project file', async () => {
+        refused = openProblem(file.size, ed.persistent ? await freeSpace() : null, budget().memoryFile);
+        if (refused) throw new Error(refused);
         const manifest = await ed.store.importProject(id, new Uint8Array(await file.arrayBuffer()));
         if (!parseProject(manifest, ed.docWidth, ed.docHeight)) throw new Error('Not a project');
         ed.projects.push({ id, name: file.name.replace(/\.(flipbook|zip)$/i, '').slice(0, 60) || 'Animation', modified: Date.now() });
@@ -141,7 +146,7 @@ export function installGallery(ed: Editor, updateThumb: () => void): void {
           ed.saveIndex();
         }
         await ed.store.deleteProject(id).catch(() => {});
-        ed.toast('That is not a Flipbook project file');
+        ed.toast(refused || 'That is not a Flipbook project file');
       });
   });
 

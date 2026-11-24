@@ -10,7 +10,7 @@ export type Request =
   | { type: 'getCel'; id: number }
   | { type: 'copyCel'; from: number; to: number }
   | { type: 'collectGarbage'; keep: number[] }
-  | { type: 'exportProject'; manifest: string; cels: number[] }
+  | { type: 'exportProject'; manifest: string; cels: number[]; limit: number }
   | { type: 'importProject'; project: string; file: Uint8Array };
 
 export interface InitResult {

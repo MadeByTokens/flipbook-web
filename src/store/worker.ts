@@ -87,7 +87,14 @@ async function handle(req: Request): Promise<{ result: unknown; transfer?: Trans
       return { result: await store.collectGarbage(req.keep) };
     case 'exportProject': {
       const entries: ZipEntry[] = [{ name: 'manifest.json', data: new TextEncoder().encode(req.manifest) }];
-      for (const id of req.cels) entries.push({ name: `cels/${id}.bin`, data: await store.getPacked(id) });
+      // The file is put together in memory, and then copied once to hand it over.
+      let bytes = 0;
+      for (const id of req.cels) {
+        const data = await store.getPacked(id);
+        bytes += data.length;
+        if (bytes * 2 > req.limit) throw new Error('too large');
+        entries.push({ name: `cels/${id}.bin`, data });
+      }
       const file = zip(entries);
       return { result: file, transfer: [file.buffer] };
     }

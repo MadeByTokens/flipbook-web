@@ -19,6 +19,7 @@ import { installExport } from './features/exportMovie';
 import { installFill } from './features/fill';
 import { installGallery } from './features/gallery';
 import { installHelp } from './features/help';
+import { Watch } from './util/device';
 import { installImages } from './features/images';
 import { installLasso } from './features/lasso';
 import { installLayers } from './features/layers';
@@ -984,7 +985,8 @@ export async function startApp(): Promise<void> {
     toastEl.textContent = message;
     toastEl.hidden = false;
     window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => (toastEl.hidden = true), 2600);
+    // Long enough to read: more for more than a line.
+    toastTimer = window.setTimeout(() => (toastEl.hidden = true), 2600 + Math.max(0, message.length - 40) * 60);
   }
   const busyEl = el<HTMLDivElement>('busy');
   const busy = async <T>(message: string, task: (progress: (fraction: number) => void) => Promise<T>): Promise<T> => {
@@ -1176,7 +1178,15 @@ export async function startApp(): Promise<void> {
   installLasso(ed);
   installClipboard(ed, copyCel);
   installImages(ed);
-  installExport(ed);
+  // Heavy work leaves a note while it runs; one still there now means the page went away in the middle.
+  const watch = new Watch('flipbook');
+  const unfinished = watch.takeUnfinished();
+  // Closing the page on purpose is not a failure to learn from.
+  window.addEventListener('pagehide', () => watch.end());
+  if (unfinished?.what === 'movie') {
+    toast(`Flipbook closed while making ${unfinished.detail}. Your drawings are safe. If it closed by itself, the device ran out of memory: a shorter animation needs less.`);
+  }
+  installExport(ed, watch);
   installBackup(ed);
   installGallery(ed, updateProjectThumb);
 
